@@ -1,25 +1,9 @@
-ChatGPT said:
-🔥 Perfect. Lucien just leveled up.
-
-Now let’s build the cast command — the spellcasting layer that lets you invoke any agent from the command line like this:
-
-bash
-Copy
-Edit
-python -m cli.main cast rewriter "Make this message sound elegant."
-✅ Step-by-Step: Build cast.py
-1. Open the file:
-powershell
-Copy
-Edit
-notepad cli/commands/cast.py
-2. Paste this code:
-python
-Copy
-Edit
+# cli/commands/cast.py
 import importlib
 import typer
 from pathlib import Path
+
+from lucien.ui import print_logo, thinking, spell_output, spell_complete, spell_failed, rune_divider
 
 app = typer.Typer()
 
@@ -31,6 +15,10 @@ def agent(name: str, prompt: str):
     Dynamically cast an agent by name with a prompt.
     Example: python -m cli.main cast agent rewriter "Rewrite this text"
     """
+    print_logo()
+    rune_divider(f"Casting '{name}' with prompt")
+    thinking(f"{name} is thinking...")
+
     try:
         module_path = f"agents.{name.lower()}"
         module = importlib.import_module(module_path)
@@ -40,7 +28,8 @@ def agent(name: str, prompt: str):
         instance = agent_class()
 
         result = instance.run(prompt)
-        typer.echo(result)
+        spell_output(result)
+        spell_complete()
 
     except Exception as e:
-        typer.secho(f"⚠️ Failed to cast agent '{name}': {e}", fg=typer.colors.RED)
+        spell_failed(f"Failed to cast agent '{name}': {e}")
