@@ -1,304 +1,498 @@
-# 🧠 Lucien CLI - AI-Enhanced Shell Replacement
+# 🧠 LUCIEN SHELL - NEXUS-7 NEURAL INTERFACE
 
-**The world's most intelligent command-line interface**
+```
+██╗     ██╗   ██╗ ██████╗██╗███████╗███╗   ██╗    ███████╗██╗  ██╗███████╗██╗     ██╗     
+██║     ██║   ██║██╔════╝██║██╔════╝████╗  ██║    ██╔════╝██║  ██║██╔════╝██║     ██║     
+██║     ██║   ██║██║     ██║█████╗  ██╔██╗ ██║    ███████╗███████║█████╗  ██║     ██║     
+██║     ██║   ██║██║     ██║██╔══╝  ██║╚██╗██║    ╚════██║██╔══██║██╔══╝  ██║     ██║     
+███████╗╚██████╔╝╚██████╗██║███████╗██║ ╚████║    ███████║██║  ██║███████╗███████╗███████╗
+╚══════╝ ╚═════╝  ╚═════╝╚═╝╚══════╝╚═╝  ╚═══╝    ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝
+```
 
-Lucien CLI combines the power of traditional shell functionality with cutting-edge artificial intelligence to create a terminal experience that learns, adapts, and assists you in real-time.
-
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-
-> 🧙 *"Where Intelligence Meets Command Line"*
-
----
-
-## 🚀 Revolutionary Features
-
-### 🧠 Intelligent Command Prediction
-- **Learns your patterns** and predicts commands before you finish typing
-- **Auto-executes safe commands** when confidence is high
-- **Context-aware suggestions** based on your current project and workflow
-
-### 🤖 Real-time AI Pair Programming
-- **Live code analysis** as you work
-- **Intelligent error resolution** with specific fixes
-- **Import suggestions** and best practice enforcement
-- **Project-aware assistance**
-
-### 🎯 Adaptive Workflow Orchestration
-- **Deep project analysis** understands your entire codebase
-- **Automated workflow generation** for complex tasks
-- **Performance optimization** based on execution history
-- **Risk assessment and mitigation**
+**The world's first AI-enhanced shell with neural learning capabilities**
 
 ---
 
-## ⚡ Quick Start
+## 🎯 **WHAT IS LUCIEN?**
+
+Lucien is a revolutionary command-line interface that combines the power of traditional shells with cutting-edge AI technology. Built with Go and the Bubble Tea TUI framework, it provides a cyberpunk-styled terminal experience with advanced security features and plugin architecture.
+
+### 🌟 **Key Features**
+
+- **🧠 Neural AI Integration** - Built-in AI assistance with local and cloud options
+- **🛡️ Advanced Security** - OPA policy enforcement and sandboxed execution  
+- **🔌 Plugin Architecture** - Extensible system with BMAD methodology plugins
+- **🎨 Cyberpunk Aesthetic** - Matrix-inspired themes with glitch effects
+- **⚡ High Performance** - Compiled Go binary with minimal resource usage
+- **🌐 Remote Access** - SSH server with full TUI over network
+- **🔒 Safe Mode** - Production-ready safety features and command filtering
+
+---
+
+## 🚀 **QUICK START**
+
+### Prerequisites
+- Go 1.22 or higher
+- Git (for updates)
+- SSH client (for remote access)
+
+### Installation
 
 ```bash
-# Clone and setup
-git clone https://github.com/your-username/lucien-cli.git
-cd lucien-cli
-pip install -r requirements.txt
+# Clone the repository
+git clone https://github.com/luciendev/lucien-core.git
+cd lucien-core
 
-# Test installation
-python -m cli.main --help
+# Build everything
+make all
 
-# Start interactive shell
-python -m cli.main interactive
+# Run Lucien locally
+make run
 ```
 
----
-
-## 🔥 Core Capabilities
-
-### Complete Shell Replacement
+### Alternative: One-Command Setup
 ```bash
-# All standard shell features
-lucien> ls -la | grep ".py" > python_files.txt
-lucien> cd ~/projects && git status
-lucien> export PATH="/new/path:$PATH"
-
-# Enhanced with AI
-lucien> gi[TAB] → git status (auto-predicted)
-lucien> # Suggests: git add . (confidence: 87%)
+# Build and run immediately
+make build && ./build/lucien
 ```
 
-### BMAD Method Agents
+---
+
+## 🎮 **USAGE**
+
+### Local Interface
 ```bash
-# Build Agent - Smart project building
-lucien cast agent build "setup python project"
+# Start standard interface
+lucien
 
-# Manage Agent - Environment management
-lucien cast agent manage "show system info"
+# Start with security protocols
+lucien --safe-mode
 
-# Analyze Agent - Deep code analysis
-lucien cast agent analyze "find security issues"
-
-# MCP Agent - Natural language processing
-lucien cast agent mcp_agent "find all TODO comments and summarize"
+# Start with configuration file
+lucien --config ~/.lucien/config.toml
 ```
 
-### AI Intelligence System
+### SSH Remote Access
 ```bash
-# Get intelligent predictions
-lucien ai predict "git"
+# Start SSH server
+lucien --ssh --port 2222
 
-# Start real-time copilot
-lucien ai start-copilot
-
-# Analyze errors with AI
-lucien ai analyze-error "ModuleNotFoundError: No module named 'requests'"
-
-# Project insights
-lucien ai project-insights
+# Connect from another machine
+ssh localhost -p 2222
 ```
 
-### PowerShell 7 Parity
+### Interactive Commands
 ```bash
-# Check compatibility
-lucien ps check-parity
+# AI assistance
+:ai <query>
 
-# PowerShell mode
-lucien ps powershell-mode
-PS> Get-ChildItem -Recurse  # Auto-translates to: find . -type f
+# Change visual theme
+:theme nexus
+:theme synthwave  
+:theme ghost
 
-# Install PowerShell aliases
-lucien ps install-powershell-aliases
+# Activate glitch mode
+:hack
+
+# Clear terminal
+:clear
+
+# Show help
+:help
 ```
 
 ---
 
-## 🏗 Architecture
+## 🏗️ **ARCHITECTURE**
 
+### Core Systems
 ```
-Lucien CLI/
-├── core/                    # Core systems
-│   ├── shell_parser.py     # Advanced shell parsing
-│   ├── shell_executor.py   # Command execution engine
-│   ├── intelligence.py     # AI prediction system
-│   ├── copilot.py         # Real-time programming assistant
-│   ├── orchestrator.py    # Workflow orchestration
-│   ├── config.py          # Configuration management
-│   └── claude_memory.py   # Persistent AI memory
-├── agents/                  # BMAD Method agents
-│   ├── build.py           # Build automation
-│   ├── manage.py          # System management
-│   ├── analyze.py         # Code analysis
-│   └── mcp_agent.py       # Natural language processing
-├── cli/commands/           # Command implementations
-└── lucien/ui.py           # Beautiful terminal UI
+lucien-core/
+├── cmd/lucien/          # Main application entry point
+├── internal/            # Core engine components
+│   ├── ui/             # Bubble Tea TUI with cyberpunk themes
+│   ├── shell/          # Advanced shell parser and executor
+│   ├── plugin/         # Plugin management and RPC
+│   ├── policy/         # OPA security policy engine
+│   ├── sandbox/        # Process sandboxing (gVisor/Job Objects)
+│   └── ai/             # AI integration (local/cloud)
+└── plugins/            # Extensible plugin ecosystem
+    ├── example-bmad/   # Build-Manage-Analyze-Deploy workflow
+    └── example-weather/# Network-enabled weather plugin
 ```
+
+### Technology Stack
+- **UI Framework**: Bubble Tea + Lip Gloss + Bubbles (Charm Bracelet)
+- **Remote Access**: Wish SSH middleware
+- **Plugin Runtime**: HashiCorp go-plugin with RPC isolation
+- **Security**: Open Policy Agent with Rego rules
+- **Sandboxing**: gVisor (Linux) + Windows Job Objects
+- **AI Engine**: llama.cpp integration + cloud API support
 
 ---
 
-## 📊 Feature Comparison
+## 🔌 **PLUGIN SYSTEM**
 
-| Feature | Bash/Zsh | PowerShell | Lucien CLI |
-|---------|-----------|------------|-------------|
-| Command Execution | ✅ | ✅ | ✅ |
-| Pipes & Redirects | ✅ | ✅ | ✅ |
-| Variables & Env | ✅ | ✅ | ✅ |
-| Scripting | ✅ | ✅ | ✅ |
-| **AI Predictions** | ❌ | ❌ | ✅ |
-| **Real-time Copilot** | ❌ | ❌ | ✅ |
-| **Project Consciousness** | ❌ | ❌ | ✅ |
-| **Adaptive Workflows** | ❌ | ❌ | ✅ |
-| **Natural Language** | ❌ | ❌ | ✅ |
-| **Memory & Learning** | ❌ | ❌ | ✅ |
-
----
-
-## 🎯 Use Cases
-
-### Development Workflow
+### BMAD Plugin Example
 ```bash
-# Lucien understands your project and suggests next steps
-lucien> cd my-python-project
-lucien> # AI suggests: pip install -r requirements.txt (new deps detected)
-
-# Real-time coding assistance
-lucien ai start-copilot  # Monitors code changes
-# Automatically suggests fixes for import errors, syntax issues
+# Execute BMAD workflow phases
+lucien plugin bmad build     # Build phase operations
+lucien plugin bmad manage    # System management
+lucien plugin bmad analyze   # Code and security analysis  
+lucien plugin bmad deploy    # Production deployment
+lucien plugin bmad workflow  # Complete lifecycle
 ```
 
-### DevOps & Automation
+### Creating Custom Plugins
+```go
+type MyPlugin struct{}
+
+func (p *MyPlugin) Execute(ctx context.Context, command string, args []string) (*Result, error) {
+    return &Result{
+        Output:   "Custom plugin response with cyberpunk flair",
+        ExitCode: 0,
+    }, nil
+}
+```
+
+---
+
+## 🛡️ **SECURITY FEATURES**
+
+### OPA Policy Engine
+```rego
+# Example security policy
+package lucien.security
+
+# Block dangerous root operations
+deny_write_root {
+    input.action == "execute"
+    input.command == "rm"
+    contains(input.args[_], "/")
+}
+```
+
+### Safe Mode Operations
+- **Command Filtering** - Blocks dangerous operations automatically
+- **Plugin Sandboxing** - Restricts plugin file system access
+- **Resource Limits** - CPU/memory/time constraints
+- **Audit Logging** - Comprehensive security event logging
+
+---
+
+## 🧠 **AI INTEGRATION**
+
+### Local AI (llama.cpp)
 ```bash
-# Create intelligent workflows
-lucien ai create-workflow "deploy to production"
-# Generates: test → build → package → deploy steps
-
-# Execute with monitoring
-lucien ai execute-workflow workflow_123456
-# Adapts based on performance and failures
+export LLAMACPP_MODEL="/path/to/model.gguf"
+lucien --config ai_local.toml
 ```
 
-### System Administration
+### Cloud AI APIs
 ```bash
-# PowerShell compatibility
-lucien ps powershell-mode
-PS> Get-Process | Where-Object {$_.CPU -gt 10}
-# Auto-translates to appropriate system commands
+export OPENAI_API_KEY="your-api-key"
+export LUCIEN_AI_PROVIDER="openai"
+lucien
+```
 
-# Intelligent system analysis
-lucien cast agent manage "diagnose system performance"
+### AI Commands
+```bash
+# Query the AI engine
+:ai How do I optimize this Docker build?
+
+# AI-powered command suggestions  
+:ai Suggest commands for system monitoring
+
+# Code analysis
+:ai --context myfile.go Explain this function
 ```
 
 ---
 
-## 🔧 Configuration
+## 🎨 **THEMES & CUSTOMIZATION**
 
-Lucien uses `~/.lucien/config.yaml`:
+### Available Themes
+- **nexus** - Classic Matrix green-on-black
+- **synthwave** - Retro cyberpunk pink/cyan
+- **ghost** - Minimalist white-on-black
 
-```yaml
-shell:
-  prompt: "lucien> "
-  history_size: 1000
-  auto_predict: true
+### Theme Switching
+```bash
+:theme nexus      # Switch to Matrix theme
+:theme synthwave  # Switch to synthwave theme
+:hack            # Toggle glitch effects
+```
 
-ai:
-  enable_copilot: true
-  prediction_threshold: 0.8
-  claude_api_key: "your-key-here"
+### Custom Configurations
+```toml
+# ~/.lucien/config.toml
+[ui]
+theme = "synthwave"
+glitch_effects = true
 
-agents:
-  bmad_enabled: true
-  timeout: 30
+[ai] 
+provider = "local"
+model_path = "/models/codellama-7b.gguf"
 
-ui:
-  theme: "mystical"
-  colors:
-    primary: "blue"
-    success: "green"
+[security]
+safe_mode = true
+policy_dir = "~/.lucien/policies"
 ```
 
 ---
 
-## 📈 Performance
+## 🧪 **TESTING**
 
-- **Command execution**: <100ms average
-- **AI prediction**: <200ms average  
-- **Real-time analysis**: Background processing
-- **Memory usage**: ~50MB base + 10MB per agent
-- **Startup time**: <500ms cold start
+### Run Test Suite
+```bash
+# Comprehensive testing
+make test
 
----
+# Performance benchmarks
+make test-bench
 
-## 🛡 Security
+# Integration tests
+make test-integration
+```
 
-- **Sandboxed agent execution**
-- **Command validation and sanitization**
-- **Secure configuration management**
-- **Memory encryption** (planned)
-- **Audit logging** for all operations
-
----
-
-## 📚 Documentation
-
-- **[Complete Documentation](DOCUMENTATION.md)** - Comprehensive guide
-- **[API Reference](docs/api.md)** - Developer documentation
-- **[Agent Development](docs/agents.md)** - Creating custom agents
-- **[Configuration Guide](docs/config.md)** - Advanced configuration
+### Test Coverage
+```bash
+# Generate coverage report
+make test
+open coverage.html
+```
 
 ---
 
-## 🏆 Why Lucien CLI?
+## 📦 **BUILDING & DEPLOYMENT**
 
-### Traditional Shells
-- Static command execution
-- No learning or adaptation
-- Manual workflow management
-- Limited error assistance
+### Local Development
+```bash
+# Development environment
+make dev
 
-### Lucien CLI
-- **Learns and adapts** to your patterns
-- **Predicts and suggests** next actions
-- **Automates complex workflows**
-- **Provides intelligent assistance**
-- **Enhances productivity** exponentially
+# Quick build and test
+make quick
+
+# Format and lint
+make fmt lint
+```
+
+### Multi-Platform Builds
+```bash
+# Build for all platforms
+make build-all
+
+# Creates:
+# - lucien-linux-amd64
+# - lucien-darwin-amd64  
+# - lucien-windows-amd64.exe
+```
+
+### Release Package
+```bash
+# Create complete release
+make release
+
+# Generates: lucien-1.0.0-nexus7-20240101_120000.tar.gz
+```
 
 ---
 
-## 🤝 Contributing
+## 🌐 **REMOTE ACCESS**
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+### SSH Server Setup
+```bash
+# Start SSH server
+lucien --ssh --port 2222
+
+# Generate host key automatically
+# Server runs full TUI over SSH
+```
+
+### Remote Connection
+```bash
+# Connect to Lucien SSH server
+ssh user@hostname -p 2222
+
+# Full terminal interface available remotely
+# All plugins and AI features accessible
+```
+
+---
+
+## ⚙️ **INSTALLATION**
+
+### System Installation
+```bash
+# Install to system PATH
+make install
+
+# Now available system-wide
+lucien --help
+```
+
+### Package Managers
+```bash
+# Homebrew (macOS)
+brew tap luciendev/tap
+brew install lucien
+
+# Chocolatey (Windows)
+choco install lucien
+
+# Snap (Linux)
+snap install lucien
+```
+
+---
+
+## 🤝 **CONTRIBUTING**
 
 ### Development Setup
 ```bash
-git clone https://github.com/your-username/lucien-cli.git
-cd lucien-cli
-pip install -r requirements.txt
-python -m cli.main validate system
+git clone https://github.com/luciendev/lucien-core.git
+cd lucien-core
+make deps dev
+```
+
+### Plugin Development
+```bash
+# Create plugin template
+mkdir plugins/my-plugin
+cd plugins/my-plugin
+# Implement PluginInterface
+# Add manifest.json
+```
+
+### Testing & Quality
+- Write comprehensive tests for all features
+- Follow Go best practices and idioms
+- Maintain cyberpunk aesthetic consistency
+- Ensure cross-platform compatibility
+
+---
+
+## 📊 **PERFORMANCE**
+
+### Benchmarks
+- **Startup Time**: <100ms cold start
+- **Memory Usage**: ~50MB base + 10MB per plugin
+- **Command Execution**: <50ms average response
+- **AI Query**: <200ms local, varies for cloud
+
+### Resource Efficiency
+- Compiled Go binary with minimal dependencies
+- Efficient TUI rendering with Bubble Tea
+- Smart caching for plugin operations
+- Optional resource limits via sandbox
+
+---
+
+## 🆘 **TROUBLESHOOTING**
+
+### Common Issues
+
+**Build Failures**
+```bash
+# Update dependencies
+make deps-update
+
+# Clean rebuild
+make clean all
+```
+
+**Plugin Errors**
+```bash
+# Check plugin manifest
+cat plugins/my-plugin/manifest.json
+
+# Rebuild plugins
+make plugins
+```
+
+**SSH Connection Issues**
+```bash
+# Check SSH server status
+lucien --ssh --port 2222 --debug
+
+# Verify host key
+ls -la .ssh/lucien_host_key*
+```
+
+### Debug Mode
+```bash
+# Enable verbose logging
+LUCIEN_DEBUG=1 lucien --debug
+
+# Check policy loading
+lucien --safe-mode --debug
 ```
 
 ---
 
-## 🎉 Community
+## 📚 **DOCUMENTATION**
 
-- **GitHub Discussions** - General questions and ideas
-- **Issues** - Bug reports and feature requests
-- **Wiki** - Community documentation and examples
+### API Reference
+```bash
+# Generate documentation
+make docs
+open docs/api.txt
+```
 
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-## 🚀 Roadmap
-
-- [ ] **Cloud sync** for configuration and memory
-- [ ] **Team collaboration** features  
-- [ ] **Plugin marketplace**
-- [ ] **Voice commands** integration
-- [ ] **IDE integration** (VS Code, etc.)
-- [ ] **Mobile companion** app
+### Examples
+- [Basic Usage](examples/basic.md)
+- [Plugin Development](examples/plugins.md)  
+- [Security Configuration](examples/security.md)
+- [AI Integration](examples/ai.md)
 
 ---
 
-**Lucien CLI - The Future of Command Line Interfaces**
+## 📄 **LICENSE**
 
-*Built with ❤️ for developers who want their tools to be as intelligent as they are.*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🎯 **ROADMAP**
+
+### Version 1.1
+- [ ] Advanced AI model fine-tuning
+- [ ] Plugin marketplace integration
+- [ ] Enhanced security policies
+- [ ] Mobile companion app
+
+### Version 1.2  
+- [ ] Distributed plugin execution
+- [ ] Machine learning command optimization
+- [ ] Advanced visualization dashboards
+- [ ] Enterprise security features
+
+---
+
+## 🌟 **ACKNOWLEDGMENTS**
+
+- **Charm Bracelet** - Bubble Tea TUI framework
+- **HashiCorp** - go-plugin architecture
+- **Open Policy Agent** - Security policy engine
+- **gVisor** - Application sandbox technology
+
+---
+
+## 📞 **SUPPORT**
+
+- **Issues**: [GitHub Issues](https://github.com/luciendev/lucien-core/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/luciendev/lucien-core/discussions)
+- **Security**: security@luciendev.com
+- **General**: hello@luciendev.com
+
+---
+
+**LUCIEN SHELL - WHERE INTELLIGENCE MEETS COMMAND LINE**
+
+*The neural interface that learns, adapts, and evolves with you.*
+
+```
+▓▒░ NEURAL PATHWAYS OPTIMIZED ░▒▓
+    SYSTEMS NOMINAL - READY FOR DEPLOYMENT
+```
