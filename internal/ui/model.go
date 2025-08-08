@@ -10,67 +10,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/luciendev/lucien-core/internal/ai"
+	"github.com/luciendev/lucien-core/internal/completion"
 	"github.com/luciendev/lucien-core/internal/shell"
 )
 
-// Theme configuration for that retro hacker aesthetic
-type Theme struct {
-	Name      string
-	Primary   lipgloss.Color
-	Secondary lipgloss.Color
-	Success   lipgloss.Color
-	Error     lipgloss.Color
-	Warning   lipgloss.Color
-	Background lipgloss.Color
-	Text       lipgloss.Color
-}
-
-var themes = map[string]Theme{
-	"nexus": {
-		Name:       "nexus",
-		Primary:    lipgloss.Color("#00ff41"), // Matrix green
-		Secondary:  lipgloss.Color("#0066cc"), // Cyber blue
-		Success:    lipgloss.Color("#00ff00"), // Bright green
-		Error:      lipgloss.Color("#ff0066"), // Neon pink
-		Warning:    lipgloss.Color("#ffaa00"), // Amber
-		Background: lipgloss.Color("#000000"), // Pure black
-		Text:       lipgloss.Color("#ffffff"), // White
-	},
-	"synthwave": {
-		Name:       "synthwave",
-		Primary:    lipgloss.Color("#ff00ff"), // Hot pink
-		Secondary:  lipgloss.Color("#00ffff"), // Cyan
-		Success:    lipgloss.Color("#39ff14"), // Electric lime
-		Error:      lipgloss.Color("#ff073a"), // Red
-		Warning:    lipgloss.Color("#ffb000"), // Orange
-		Background: lipgloss.Color("#1a0033"), // Dark purple
-		Text:       lipgloss.Color("#ffffff"), // White
-	},
-	"ghost": {
-		Name:       "ghost",
-		Primary:    lipgloss.Color("#ffffff"), // White
-		Secondary:  lipgloss.Color("#aaaaaa"), // Gray
-		Success:    lipgloss.Color("#00cc00"), // Green
-		Error:      lipgloss.Color("#cc0000"), // Red
-		Warning:    lipgloss.Color("#ccaa00"), // Yellow
-		Background: lipgloss.Color("#000000"), // Black
-		Text:       lipgloss.Color("#cccccc"), // Light gray
-	},
-}
 
 // Model represents the main TUI application state
 type Model struct {
-	shell        *shell.Shell
-	ai           *ai.Engine
-	input        textinput.Model
-	viewport     viewport.Model
-	output       []string
-	theme        Theme
-	width        int
-	height       int
-	ready        bool
-	aiThinking   bool
-	glitchEffect bool
+	shell              *shell.Shell
+	ai                 *ai.Engine
+	completion         *completion.Engine
+	input              textinput.Model
+	viewport           viewport.Model
+	output             []string
+	currentTheme       Theme
+	width              int
+	height             int
+	ready              bool
+	aiThinking         bool
+	glitchEffect       bool
+	showingSuggestions bool
+	suggestions        []completion.Suggestion
+	suggestionPage     int
+	suggestionsPerPage int
+	lastTabPress       time.Time
 }
 
 // Mind-blowing feature 1: AI predictive suggestions with neural network visualization
@@ -100,41 +63,77 @@ func NewModel(shell *shell.Shell, aiEngine *ai.Engine) Model {
 	vp := viewport.New(80, 20)
 	vp.SetContent("")
 
-	model := Model{
-		shell:    shell,
-		ai:       aiEngine,
-		input:    ti,
-		viewport: vp,
-		output:   []string{},
-		theme:    themes["nexus"], // Default to Matrix theme
-	}
+	// Initialize completion engine
+	completionEngine := completion.New()
 
-	// Welcome message with hacker aesthetic
+	model := Model{
+		shell:              shell,
+		ai:                 aiEngine,
+		completion:         completionEngine,
+		input:              ti,
+		viewport:           vp,
+		output:             []string{},
+		currentTheme:       GetTheme("nexus"), // Load default nexus theme
+		width:              80,
+		height:             24,
+		ready:              true, // Set ready to true so the interface shows immediately
+		suggestionPage:     0,
+		suggestionsPerPage: 8, // Show 8 suggestions per page
+	}
+	
+	// Animated neural pathways loading sequence
 	welcomeMsg := []string{
 		"",
-		"🔴 NEURAL INTERFACE ESTABLISHED",
-		"🔴 QUANTUM ENTANGLEMENT: STABLE", 
-		"🔴 AI SUBSYSTEMS: ONLINE",
-		"🔴 SECURITY PROTOCOLS: MAXIMUM",
+		model.currentTheme.SuccessStyle.Render("⚡ NEURAL PATHWAYS LOADING..."),
+		model.currentTheme.InfoStyle.Render("▓▒░ [████████████████████] 100% ░▒▓"),
 		"",
-		"▶ Type 'help' for command reference",
-		"▶ Type ':theme <name>' to switch visual modes",
-		"▶ Type ':ai <query>' for neural consultation", 
-		"▶ Type ':hack' to enable glitch mode",
+		model.currentTheme.SuccessStyle.Render("🔴 NEURAL INTERFACE ESTABLISHED"),
+		model.currentTheme.SuccessStyle.Render("🔴 QUANTUM ENTANGLEMENT: STABLE"), 
+		model.currentTheme.SuccessStyle.Render("🔴 AI SUBSYSTEMS: ONLINE"),
+		model.currentTheme.SuccessStyle.Render("🔴 SECURITY PROTOCOLS: MAXIMUM"),
+		model.currentTheme.SuccessStyle.Render("🔴 CYBERPUNK THEME: " + strings.ToUpper(model.currentTheme.Name)),
+		"",
+		model.currentTheme.InfoStyle.Render("▶ Type 'help' for command reference"),
+		model.currentTheme.InfoStyle.Render("▶ Type ':theme <name>' to switch visual modes"),
+		model.currentTheme.InfoStyle.Render("▶ Type ':ai <query>' for neural consultation"), 
+		model.currentTheme.InfoStyle.Render("▶ Type ':hack' to enable glitch mode"),
+		model.currentTheme.InfoStyle.Render("▶ Press TAB for intelligent completion"),
+		"",
+		model.currentTheme.SecondaryStyle.Render("🧠 NEURAL MATRIX SYNCHRONIZED - READY FOR INPUT"),
 		"",
 	}
 	
 	model.output = append(model.output, welcomeMsg...)
 	model.updateViewport()
 
+	// Initialize completion engine with shell data
+	model.updateCompletionData()
+
 	return model
+}
+
+// SetHistoryProvider sets the history provider for intelligent completion
+func (m *Model) SetHistoryProvider(provider completion.HistoryProvider) {
+	if m.completion != nil {
+		m.completion.SetHistoryProvider(provider)
+	}
+}
+
+// updateCompletionData updates the completion engine with current shell state
+func (m *Model) updateCompletionData() {
+	if m.shell == nil || m.completion == nil {
+		return
+	}
+	
+	// TODO: Wire up shell aliases and variables when shell API allows access
+	// For now, the completion engine uses its built-in command knowledge
 }
 
 func (m Model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -154,10 +153,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			return m.handleCommand()
+			m.showingSuggestions = false
+			_, cmdResult := m.handleCommand()
+			return m, cmdResult
 		case tea.KeyCtrlL:
 			m.output = []string{}
+			m.showingSuggestions = false
 			m.updateViewport()
+		case tea.KeyTab:
+			_, cmdResult := m.handleTabCompletion()
+			return m, cmdResult
+		case tea.KeyEsc:
+			m.showingSuggestions = false
 		}
 
 	case glitchMsg:
@@ -177,15 +184,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) handleCommand() (Model, tea.Cmd) {
+func (m *Model) handleTabCompletion() (*Model, tea.Cmd) {
+	now := time.Now()
+	currentInput := m.input.Value()
+	cursorPos := m.input.Position()
+	
+	// Check if this is a double-tab within 500ms for paging
+	isDoubleTap := m.showingSuggestions && now.Sub(m.lastTabPress) < 500*time.Millisecond
+	m.lastTabPress = now
+	
+	// Get completion suggestions if not already showing or input changed
+	if !m.showingSuggestions || !isDoubleTap {
+		suggestions := m.completion.Complete(currentInput, cursorPos)
+		
+		if len(suggestions) == 0 {
+			m.showingSuggestions = false
+			return m, nil
+		}
+		
+		if len(suggestions) == 1 {
+			// Auto-complete with the single suggestion
+			text := suggestions[0].Text
+			
+			// Auto-cd for directory completions
+			if suggestions[0].Type == completion.DirectoryCompletion && !strings.HasPrefix(currentInput, "cd ") {
+				m.input.SetValue("cd " + text)
+				m.input.SetCursor(len("cd " + text))
+			} else {
+				m.input.SetValue(text)
+				m.input.SetCursor(len(text))
+			}
+			
+			m.showingSuggestions = false
+			m.suggestionPage = 0
+		} else {
+			// Show multiple suggestions
+			m.suggestions = suggestions
+			m.showingSuggestions = true
+			m.suggestionPage = 0
+			
+			// Try to complete common prefix
+			bestMatch := m.completion.GetBestMatch(suggestions)
+			if len(bestMatch) > len(currentInput) {
+				m.input.SetValue(bestMatch)
+				m.input.SetCursor(len(bestMatch))
+			}
+		}
+	} else if isDoubleTap {
+		// Handle paging through suggestions
+		totalPages := (len(m.suggestions) + m.suggestionsPerPage - 1) / m.suggestionsPerPage
+		if totalPages > 1 {
+			m.suggestionPage = (m.suggestionPage + 1) % totalPages
+		}
+	}
+	
+	return m, nil
+}
+
+func (m *Model) handleCommand() (*Model, tea.Cmd) {
 	command := strings.TrimSpace(m.input.Value())
 	if command == "" {
 		return m, nil
 	}
 
-	// Add command to output with cyberpunk prompt
-	prompt := m.formatPrompt() + command
-	m.output = append(m.output, prompt)
+	// Add command to output without duplicate prompt (styled)
+	cmdLine := m.stylePrimary("⚡ ") + command
+	m.output = append(m.output, cmdLine)
 
 	// Handle special commands
 	if strings.HasPrefix(command, ":") {
@@ -197,12 +261,23 @@ func (m Model) handleCommand() (Model, tea.Cmd) {
 			errorMsg := m.styleError(fmt.Sprintf("❌ ERROR: %v", err))
 			m.output = append(m.output, errorMsg)
 		} else {
-			// Add command output
+			// Add command output with proper formatting
 			if result.Output != "" {
-				lines := strings.Split(result.Output, "\n")
+				lines := strings.Split(strings.TrimRight(result.Output, "\n"), "\n")
 				for _, line := range lines {
-					if line != "" {
+					if strings.TrimSpace(line) != "" {
+						// Style output lines for better readability
 						m.output = append(m.output, "  "+line)
+					}
+				}
+			}
+			
+			// Show error output if present
+			if result.Error != "" {
+				errorLines := strings.Split(strings.TrimRight(result.Error, "\n"), "\n") 
+				for _, line := range errorLines {
+					if strings.TrimSpace(line) != "" {
+						m.output = append(m.output, m.styleError("  ⚠️  "+line))
 					}
 				}
 			}
@@ -227,28 +302,47 @@ func (m Model) handleCommand() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleSpecialCommand(command string) Model {
+func (m *Model) handleSpecialCommand(command string) *Model {
 	parts := strings.Fields(command[1:]) // Remove ':'
 	if len(parts) == 0 {
 		return m
 	}
 
 	switch parts[0] {
+	case "config":
+		if len(parts) >= 3 && parts[1] == "set" {
+			// :config set key value
+			key := parts[2]
+			value := strings.Join(parts[3:], " ")
+			m.handleConfigSet(key, value)
+		} else if len(parts) == 2 && parts[1] == "show" {
+			// :config show
+			m.handleConfigShow()
+		} else if len(parts) == 2 && parts[1] == "reload" {
+			// :config reload
+			m.handleConfigReload()
+		} else {
+			m.output = append(m.output, 
+				m.styleError("Usage: :config set <key> <value>, :config show, or :config reload"))
+		}
+	
 	case "theme":
 		if len(parts) > 1 {
-			if theme, exists := themes[parts[1]]; exists {
-				m.theme = theme
+			themeName := parts[1]
+			if IsValidTheme(themeName) {
+				m.currentTheme = GetTheme(themeName)
 				m.output = append(m.output, 
-					m.styleSuccess(fmt.Sprintf("🎨 Theme switched to: %s", theme.Name)))
+					m.styleSuccess(fmt.Sprintf("🎨 Theme switched to: %s", m.currentTheme.Name)))
 			} else {
-				available := make([]string, 0, len(themes))
-				for name := range themes {
-					available = append(available, name)
-				}
+				available := GetThemeNames()
 				m.output = append(m.output, 
 					m.styleError(fmt.Sprintf("❌ Unknown theme. Available: %s", 
 					strings.Join(available, ", "))))
 			}
+		} else {
+			// Show current theme and available options
+			m.output = append(m.output, m.styleInfo(fmt.Sprintf("Current theme: %s", m.currentTheme.Name)))
+			m.output = append(m.output, m.styleSecondary(fmt.Sprintf("Available themes: %s", strings.Join(GetThemeNames(), ", "))))
 		}
 
 	case "ai":
@@ -281,6 +375,12 @@ func (m Model) handleSpecialCommand(command string) Model {
 	case "clear":
 		m.output = []string{}
 
+	case "spells":
+		m.showSpells()
+
+	case "weather":
+		m.showWeather()
+
 	case "help":
 		m.showHelp()
 	}
@@ -288,7 +388,7 @@ func (m Model) handleSpecialCommand(command string) Model {
 	return m
 }
 
-func (m Model) showHelp() {
+func (m *Model) showHelp() {
 	helpText := []string{
 		"",
 		m.stylePrimary("🔴 LUCIEN NEURAL INTERFACE - COMMAND REFERENCE"),
@@ -296,6 +396,8 @@ func (m Model) showHelp() {
 		"📟 SYSTEM COMMANDS:",
 		"  :theme <name>     Switch visual theme (nexus, synthwave, ghost)",
 		"  :ai <query>       Consult neural network",
+		"  :spells           List all available AI agents",
+		"  :weather          Show weather information [WIP]",
 		"  :hack             Toggle glitch mode",
 		"  :clear            Clear terminal buffer",
 		"  :help             Show this reference",
@@ -304,10 +406,17 @@ func (m Model) showHelp() {
 		"  Standard shell commands with pipes, redirects, and variables",
 		"  Built-in commands: cd, set, alias, exit",
 		"",
+		"🤖 AI AGENT COMMANDS:",
+		"  plan \"task\"       Break down goals into actionable tasks",
+		"  design \"idea\"     Generate UI code from descriptions",
+		"  review file.py   Analyze code and suggest improvements",
+		"  code \"request\"   Generate, refactor, or explain code",
+		"",
 		"🧠 AI FEATURES:",
 		"  • Predictive command suggestions",
 		"  • Context-aware assistance", 
 		"  • Neural pattern recognition",
+		"  • Intelligent tab completion",
 		"",
 		"🛡️  SECURITY:",
 		"  • OPA policy enforcement",
@@ -317,6 +426,55 @@ func (m Model) showHelp() {
 	}
 
 	m.output = append(m.output, helpText...)
+}
+
+func (m *Model) showSpells() {
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.stylePrimary("✨ AVAILABLE AI AGENTS (SPELLS)"))
+	m.output = append(m.output, m.stylePrimary("================================"))
+	m.output = append(m.output, "")
+	
+	// List the AI agents directly
+	agents := []struct {
+		name string
+		desc string
+		example string
+	}{
+		{"plan", "Break down goals into actionable tasks", `plan "create a web app"`},
+		{"design", "Generate UI code from descriptions", `design "login form with styling"`},
+		{"review", "Analyze code and suggest improvements", `review main.py`},
+		{"code", "Generate, refactor, or explain code", `code "write a fibonacci function"`},
+	}
+	
+	for _, agent := range agents {
+		m.output = append(m.output, m.styleSuccess(fmt.Sprintf("🤖 %s", agent.name)))
+		m.output = append(m.output, fmt.Sprintf("   %s", agent.desc))
+		m.output = append(m.output, m.styleSecondary(fmt.Sprintf("   Example: %s", agent.example)))
+		m.output = append(m.output, "")
+	}
+	
+	m.output = append(m.output, m.stylePrimary("💡 Neural Network Integration:"))
+	m.output = append(m.output, "   • AI agents process requests through secure Python bridge")
+	m.output = append(m.output, "   • Each agent specializes in specific cognitive domains")
+	m.output = append(m.output, "   • Responses are styled with cyberpunk aesthetics")
+	m.output = append(m.output, "")
+}
+
+func (m *Model) showWeather() {
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.stylePrimary("🌤️  NEURAL WEATHER SYSTEM"))
+	m.output = append(m.output, m.stylePrimary("======================="))
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleWarning("⚠️  [WIP] Weather widget integration in progress..."))
+	m.output = append(m.output, "")
+	m.output = append(m.output, "🔮 Future features:")
+	m.output = append(m.output, "   • Real-time weather data")
+	m.output = append(m.output, "   • Location-based forecasts")
+	m.output = append(m.output, "   • Cyberpunk weather visualization")
+	m.output = append(m.output, "   • Integration with system notifications")
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleSecondary("   Run ':theme synthwave' for optimal atmospheric conditions"))
+	m.output = append(m.output, "")
 }
 
 func (m Model) getAISuggestions(command string) []aiSuggestion {
@@ -358,14 +516,22 @@ func (m Model) View() string {
 	header := m.renderHeader()
 	content := m.viewport.View()
 	inputSection := m.renderInput()
+	
+	// Add completion suggestions if showing
+	var suggestionSection string
+	if m.showingSuggestions && len(m.suggestions) > 0 {
+		suggestionSection = m.renderSuggestions()
+	}
+	
 	footer := m.renderFooter()
 
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		content,
-		inputSection,
-		footer,
-	)
+	viewComponents := []string{header, content, inputSection}
+	if suggestionSection != "" {
+		viewComponents = append(viewComponents, suggestionSection)
+	}
+	viewComponents = append(viewComponents, footer)
+
+	view := lipgloss.JoinVertical(lipgloss.Left, viewComponents...)
 
 	if glitchOverlay != "" {
 		// Layer glitch effect over the main view
@@ -382,14 +548,8 @@ func (m Model) renderHeader() string {
 		aiStatus = "🧠 AI:THINKING..."
 	}
 
-	headerStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Primary).
-		Background(m.theme.Background).
-		Bold(true).
-		Padding(0, 2)
-
-	left := headerStyle.Render(title)
-	right := headerStyle.Copy().Foreground(m.theme.Secondary).Render(aiStatus)
+	left := m.currentTheme.HeaderStyle.Render(title)
+	right := m.currentTheme.HeaderStyle.Copy().Render(aiStatus)
 
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Left, left) + 
 		   lipgloss.PlaceHorizontal(m.width, lipgloss.Right, right)
@@ -397,61 +557,220 @@ func (m Model) renderHeader() string {
 
 func (m Model) renderInput() string {
 	prompt := m.formatPrompt()
-	inputStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Text).
-		Background(m.theme.Background)
+	return m.currentTheme.InputStyle.Render(prompt + m.input.View())
+}
 
-	return inputStyle.Render(prompt + m.input.View())
+func (m Model) renderSuggestions() string {
+	if len(m.suggestions) == 0 {
+		return ""
+	}
+	
+	// Calculate pagination
+	totalSuggestions := len(m.suggestions)
+	totalPages := (totalSuggestions + m.suggestionsPerPage - 1) / m.suggestionsPerPage
+	currentPage := m.suggestionPage
+	
+	if currentPage >= totalPages {
+		currentPage = 0
+	}
+	
+	startIdx := currentPage * m.suggestionsPerPage
+	endIdx := startIdx + m.suggestionsPerPage
+	if endIdx > totalSuggestions {
+		endIdx = totalSuggestions
+	}
+	
+	suggestions := m.suggestions[startIdx:endIdx]
+	
+	var suggestionLines []string
+	
+	// Header with page info
+	if totalPages > 1 {
+		header := fmt.Sprintf("🔧 TAB COMPLETION SUGGESTIONS (Page %d/%d):", currentPage+1, totalPages)
+		suggestionLines = append(suggestionLines, m.styleSuccess(header))
+	} else {
+		suggestionLines = append(suggestionLines, m.styleSuccess("🔧 TAB COMPLETION SUGGESTIONS:"))
+	}
+	
+	for _, suggestion := range suggestions {
+		var icon string
+		switch suggestion.Type {
+		case completion.CommandCompletion:
+			icon = "⚡"
+		case completion.FileCompletion:
+			icon = "📄"
+		case completion.DirectoryCompletion:
+			icon = "📁"
+		case completion.VariableCompletion:
+			icon = "💲"
+		case completion.AliasCompletion:
+			icon = "🔗"
+		case completion.HistoryCompletion:
+			icon = "📜"
+		default:
+			icon = "▶"
+		}
+		
+		suggestionText := fmt.Sprintf("  %s %s", icon, suggestion.Text)
+		if suggestion.Description != "" {
+			suggestionText += m.styleSecondary(fmt.Sprintf(" (%s)", suggestion.Description))
+		}
+		
+		suggestionLines = append(suggestionLines, suggestionText)
+	}
+	
+	// Footer with navigation hint
+	if totalPages > 1 {
+		footer := fmt.Sprintf("  Press TAB again for next page • ESC to dismiss")
+		suggestionLines = append(suggestionLines, m.styleSecondary(footer))
+	} else if totalSuggestions > 0 {
+		footer := "  Press ESC to dismiss"
+		suggestionLines = append(suggestionLines, m.styleSecondary(footer))
+	}
+	
+	return strings.Join(suggestionLines, "\n")
 }
 
 func (m Model) renderFooter() string {
-	shortcuts := "CTRL+C:quit • CTRL+L:clear • :help for commands"
-	footerStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Secondary).
-		Background(m.theme.Background).
-		Italic(true)
-
-	return footerStyle.Render(shortcuts)
+	shortcuts := "CTRL+C:quit • CTRL+L:clear • TAB:complete • :help for commands"
+	return m.currentTheme.FooterStyle.Render(shortcuts)
 }
 
 func (m Model) renderGlitchEffect() string {
 	// Create cyberpunk glitch overlay
 	glitchChars := "▓▒░█▄▀■□▪▫"
-	glitchStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Error).
-		Background(m.theme.Background).
-		Blink(true)
+	glitchStyle := m.currentTheme.ErrorStyle.Copy().Blink(true)
 
 	return glitchStyle.Render(string(glitchChars[time.Now().Unix()%int64(len(glitchChars))]))
 }
 
 func (m Model) formatPrompt() string {
-	promptStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Primary).
-		Bold(true)
-
-	return promptStyle.Render("lucien@nexus:~$ ")
+	return m.currentTheme.PromptStyle.Render("lucien@nexus:~$ ")
 }
 
-func (m Model) updateViewport() {
+func (m *Model) updateViewport() {
 	content := strings.Join(m.output, "\n")
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
 
-// Styling helpers for that cyberpunk aesthetic
+// Styling helpers using the production theme system
 func (m Model) stylePrimary(text string) string {
-	return lipgloss.NewStyle().Foreground(m.theme.Primary).Render(text)
+	return m.currentTheme.PromptStyle.Render(text)
 }
 
 func (m Model) styleSuccess(text string) string {
-	return lipgloss.NewStyle().Foreground(m.theme.Success).Bold(true).Render(text)
+	return m.currentTheme.SuccessStyle.Render(text)
 }
 
 func (m Model) styleError(text string) string {
-	return lipgloss.NewStyle().Foreground(m.theme.Error).Bold(true).Render(text)
+	return m.currentTheme.ErrorStyle.Render(text)
 }
 
 func (m Model) styleWarning(text string) string {
-	return lipgloss.NewStyle().Foreground(m.theme.Warning).Render(text)
+	return m.currentTheme.WarningStyle.Render(text)
+}
+
+func (m Model) styleSecondary(text string) string {
+	return m.currentTheme.SecondaryStyle.Render(text)
+}
+
+func (m Model) styleInfo(text string) string {
+	return m.currentTheme.InfoStyle.Render(text)
+}
+
+func (m Model) styleCommand(text string) string {
+	return m.currentTheme.CommandStyle.Render(text)
+}
+
+func (m Model) styleOutput(text string) string {
+	return m.currentTheme.OutputStyle.Render(text)
+}
+
+// Config handling methods
+func (m *Model) handleConfigSet(key, value string) {
+	config, err := LoadConfig()
+	if err != nil {
+		m.output = append(m.output, m.styleError(fmt.Sprintf("❌ Failed to load config: %v", err)))
+		return
+	}
+	
+	if err := SetConfigValue(config, key, value); err != nil {
+		m.output = append(m.output, m.styleError(fmt.Sprintf("❌ Failed to set config: %v", err)))
+		return
+	}
+	
+	if err := SaveConfig(config); err != nil {
+		m.output = append(m.output, m.styleError(fmt.Sprintf("❌ Failed to save config: %v", err)))
+		return
+	}
+	
+	m.output = append(m.output, m.styleSuccess(fmt.Sprintf("✅ Config set: %s = %s", key, value)))
+	m.output = append(m.output, m.styleInfo("💡 Restart shell for changes to take effect"))
+}
+
+func (m *Model) handleConfigShow() {
+	config, err := LoadConfig()
+	if err != nil {
+		m.output = append(m.output, m.styleError(fmt.Sprintf("❌ Failed to load config: %v", err)))
+		return
+	}
+	
+	configPath, _ := GetConfigPath()
+	m.output = append(m.output, m.styleSuccess("📝 CURRENT CONFIGURATION"))
+	m.output = append(m.output, m.styleSecondary(fmt.Sprintf("Config file: %s", configPath)))
+	m.output = append(m.output, "")
+	
+	m.output = append(m.output, m.styleInfo("🐚 SHELL"))
+	m.output = append(m.output, fmt.Sprintf("  prompt = %s", config.Shell.Prompt))
+	m.output = append(m.output, fmt.Sprintf("  safe_mode = %t", config.Shell.SafeMode))
+	m.output = append(m.output, fmt.Sprintf("  default_theme = %s", config.Shell.DefaultTheme))
+	m.output = append(m.output, fmt.Sprintf("  execution_timeout = %d", config.Shell.ExecutionTimeout))
+	
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleInfo("🎨 UI"))
+	m.output = append(m.output, fmt.Sprintf("  animated_startup = %t", config.UI.AnimatedStartup))
+	m.output = append(m.output, fmt.Sprintf("  glitch_effects = %t", config.UI.GlitchEffects))
+	m.output = append(m.output, fmt.Sprintf("  color_support = %s", config.UI.ColorSupport))
+	
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleInfo("📜 HISTORY"))
+	m.output = append(m.output, fmt.Sprintf("  enabled = %t", config.History.Enabled))
+	m.output = append(m.output, fmt.Sprintf("  max_entries = %d", config.History.MaxEntries))
+	m.output = append(m.output, fmt.Sprintf("  save_on_exit = %t", config.History.SaveOnExit))
+	
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleInfo("🔧 COMPLETION"))
+	m.output = append(m.output, fmt.Sprintf("  enabled = %t", config.Completion.Enabled))
+	m.output = append(m.output, fmt.Sprintf("  suggestions_per_page = %d", config.Completion.SuggestionsPerPage))
+	m.output = append(m.output, fmt.Sprintf("  auto_cd = %t", config.Completion.AutoCD))
+	m.output = append(m.output, fmt.Sprintf("  fuzzy_matching = %t", config.Completion.FuzzyMatching))
+	
+	m.output = append(m.output, "")
+	m.output = append(m.output, m.styleInfo("🧠 AI"))
+	m.output = append(m.output, fmt.Sprintf("  enabled = %t", config.AI.Enabled))
+	m.output = append(m.output, fmt.Sprintf("  suggest_commands = %t", config.AI.SuggestCommands))
+	m.output = append(m.output, fmt.Sprintf("  confidence_threshold = %.2f", config.AI.ConfidenceThreshold))
+	m.output = append(m.output, fmt.Sprintf("  model_provider = %s", config.AI.ModelProvider))
+}
+
+func (m *Model) handleConfigReload() {
+	config, err := LoadConfig()
+	if err != nil {
+		m.output = append(m.output, m.styleError(fmt.Sprintf("❌ Failed to reload config: %v", err)))
+		return
+	}
+	
+	// Apply relevant config changes that can be applied immediately
+	if config.Completion.SuggestionsPerPage > 0 {
+		m.suggestionsPerPage = config.Completion.SuggestionsPerPage
+	}
+	
+	// Switch theme if different
+	if IsValidTheme(config.Shell.DefaultTheme) && config.Shell.DefaultTheme != m.currentTheme.Name {
+		m.currentTheme = GetTheme(config.Shell.DefaultTheme)
+	}
+	
+	m.output = append(m.output, m.styleSuccess("✅ Configuration reloaded"))
+	m.output = append(m.output, m.styleInfo("💡 Some changes require shell restart"))
 }

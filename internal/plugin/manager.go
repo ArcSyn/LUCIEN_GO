@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 )
@@ -207,7 +208,7 @@ func (m *Manager) loadPlugin(name string, manifest *Manifest) error {
 	return nil
 }
 
-// ExecutePlugin executes a command in the specified plugin
+// ExecutePlugin executes a command in the specified plugin with security validation
 func (m *Manager) ExecutePlugin(pluginName, command string, args []string) (*Result, error) {
 	m.mu.RLock()
 	loadedPlugin, exists := m.plugins[pluginName]
@@ -217,8 +218,209 @@ func (m *Manager) ExecutePlugin(pluginName, command string, args []string) (*Res
 		return nil, fmt.Errorf("plugin not found: %s", pluginName)
 	}
 
-	ctx := context.Background()
-	return loadedPlugin.plugin.Execute(ctx, command, args)
+	// Validate plugin capability before execution
+	if err := m.validatePluginCapability(loadedPlugin, command); err != nil {
+		return &Result{
+			Error:    fmt.Sprintf("Plugin capability validation failed: %v", err),
+			ExitCode: 1,
+		}, err
+	}
+
+	// Validate command and arguments for security
+	if err := m.validatePluginCommand(command, args); err != nil {
+		return &Result{
+			Error:    fmt.Sprintf("Plugin command validation failed: %v", err),
+			ExitCode: 1,
+		}, err
+	}
+
+	// Create secure execution context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Execute with additional monitoring
+	result, err := m.executePluginSecure(ctx, loadedPlugin, command, args)
+	if err != nil {
+		return &Result{
+			Error:    err.Error(),
+			ExitCode: 1,
+		}, err
+	}
+
+	return result, nil
+}
+
+// validatePluginCapability ensures the plugin has required capabilities
+func (m *Manager) validatePluginCapability(plugin *LoadedPlugin, command string) error {
+	// Get required capability for command
+	requiredCapability := m.getRequiredCapability(command)
+	if requiredCapability == "" {
+		return nil // No specific capability required
+	}
+
+	// Check if plugin has the required capability
+	for _, capability := range plugin.info.Capabilities {
+		if capability == requiredCapability || capability == "all" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("plugin lacks required capability: %s", requiredCapability)
+}
+
+// getRequiredCapability returns the capability required for a specific command
+func (m *Manager) getRequiredCapability(command string) string {
+	capabilityMap := map[string]string{
+		"execute":     "execute",
+		"read":        "filesystem:read",
+		"write":       "filesystem:write",
+		"network":     "network:access",
+		"system":      "system:access",
+		"env":         "environment:access",
+		"process":     "process:spawn",
+		"plugin":      "plugin:manage",
+	}
+	
+	return capabilityMap[command]
+}
+
+// validatePluginCommand validates plugin commands for security
+func (m *Manager) validatePluginCommand(command string, args []string) error {
+	// Validate command name
+	if len(command) == 0 || len(command) > 64 {
+		return fmt.Errorf("invalid command name length")
+	}
+
+	// Check for dangerous characters in command name
+	if strings.ContainsAny(command, "\x00\n\r;|&`$") {
+		return fmt.Errorf("dangerous characters in command name")
+	}
+
+	// Validate each argument
+	for i, arg := range args {
+		if err := m.validatePluginArgument(arg); err != nil {
+			return fmt.Errorf("argument %d validation failed: %v", i+1, err)
+		}
+	}
+
+	// Check for prohibited commands
+	prohibitedCommands := []string{
+		"rm", "del", "erase", "format", "fdisk", "mkfs", "dd",
+		"sudo", "su", "chmod", "chown", "kill", "killall",
+		"systemctl", "service", "mount", "umount",
+	}
+
+	for _, prohibited := range prohibitedCommands {
+		if command == prohibited {
+			return fmt.Errorf("command '%s' is prohibited for plugins", command)
+		}
+	}
+
+	return nil
+}
+
+// validatePluginArgument validates individual plugin arguments
+func (m *Manager) validatePluginArgument(arg string) error {
+	// Check length
+	if len(arg) > 1024 {
+		return fmt.Errorf("argument too long")
+	}
+
+	// Check for null bytes
+	if strings.ContainsAny(arg, "\x00") {
+		return fmt.Errorf("null byte in argument")
+	}
+
+	// Check for dangerous patterns
+	dangerousPatterns := []string{
+		"../", // Path traversal
+		"/etc/", // System directories
+		"/proc/", // Process filesystem
+		"/sys/", // System filesystem
+		"C:\\Windows\\", // Windows system
+		"$(", // Command substitution
+		"`", // Command substitution
+		";", "&&", "||", // Command chaining
+	}
+
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(arg, pattern) {
+			return fmt.Errorf("dangerous pattern in argument: %s", pattern)
+		}
+	}
+
+	return nil
+}
+
+// executePluginSecure executes plugin with additional security measures
+func (m *Manager) executePluginSecure(ctx context.Context, plugin *LoadedPlugin, command string, args []string) (*Result, error) {
+	// Create a secure execution environment
+	secureCtx := context.WithValue(ctx, "plugin_name", plugin.manifest.Name)
+	secureCtx = context.WithValue(secureCtx, "start_time", time.Now())
+
+	// Execute with monitoring
+	resultChan := make(chan *Result, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		result, err := plugin.plugin.Execute(secureCtx, command, args)
+		if err != nil {
+			errorChan <- err
+			return
+		}
+		resultChan <- result
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case result := <-resultChan:
+		// Validate result before returning
+		if err := m.validatePluginResult(result); err != nil {
+			return nil, fmt.Errorf("plugin result validation failed: %v", err)
+		}
+		return result, nil
+	case err := <-errorChan:
+		return nil, fmt.Errorf("plugin execution error: %v", err)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("plugin execution timed out")
+	}
+}
+
+// validatePluginResult validates plugin execution results
+func (m *Manager) validatePluginResult(result *Result) error {
+	if result == nil {
+		return fmt.Errorf("nil result")
+	}
+
+	// Limit output size to prevent memory exhaustion
+	if len(result.Output) > 1024*1024 { // 1MB limit
+		result.Output = result.Output[:1024*1024] + "... [truncated]"
+	}
+
+	if len(result.Error) > 10240 { // 10KB limit for errors
+		result.Error = result.Error[:10240] + "... [truncated]"
+	}
+
+	// Sanitize output for dangerous content
+	result.Output = m.sanitizePluginOutput(result.Output)
+	result.Error = m.sanitizePluginOutput(result.Error)
+
+	return nil
+}
+
+// sanitizePluginOutput removes dangerous content from plugin output
+func (m *Manager) sanitizePluginOutput(output string) string {
+	// Remove null bytes
+	output = strings.ReplaceAll(output, "\x00", "")
+	
+	// Remove other control characters that could cause issues
+	for i := 1; i < 32; i++ {
+		if i != 9 && i != 10 && i != 13 { // Keep tab, newline, carriage return
+			output = strings.ReplaceAll(output, string(byte(i)), "")
+		}
+	}
+
+	return output
 }
 
 // ListPlugins returns information about all loaded plugins

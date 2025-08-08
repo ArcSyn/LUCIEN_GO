@@ -3,6 +3,7 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -258,7 +259,7 @@ func TestPolicyContent(t *testing.T) {
 	}
 
 	for _, element := range expectedElements {
-		if !contains(content, element) {
+		if !strings.Contains(content, element) {
 			t.Errorf("Policy content should contain '%s'", element)
 		}
 	}
@@ -415,30 +416,3 @@ func BenchmarkPluginAuthorization(b *testing.B) {
 	}
 }
 
-// Helper function to check if string contains substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && (s[:len(substr)] == substr || 
-		s[len(s)-len(substr):] == substr || 
-		strings.Contains(s, substr))))
-}
-
-// Helper function like strings.Contains but more comprehensive
-func strings.Contains(s, substr string) bool {
-	return len(s) >= len(substr) && indexOf(s, substr) >= 0
-}
-
-func indexOf(s, substr string) int {
-	if len(substr) == 0 {
-		return 0
-	}
-	if len(substr) > len(s) {
-		return -1
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
