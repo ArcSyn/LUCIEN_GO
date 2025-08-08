@@ -1,12 +1,36 @@
-# Python
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+lucien
+lucien.exe
+
+# Test binaries
+*.test
+
+# Coverage files
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Build directories
+/build/
+/dist/
+
+# Python (for plugins)
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -52,11 +76,35 @@ Thumbs.db
 logs/
 temp/
 tmp/
+history
+.history
 
 # Configuration
 config.local.yaml
+config.toml
+!config.example.toml
 .env.local
+.env
 
 # Cache
 .cache/
 *.cache
+
+# Plugin development
+/plugins/*/build/
+/plugins/*/*.so
+/plugins/*/*.dll
+/plugins/*/*.dylib
+
+# Documentation
+/docs/dist/
+/docs/node_modules/
+
+# Development artifacts
+*.prof
+*.pprof
+
+# Archives
+*.zip
+*.tar.gz
+*.tgz

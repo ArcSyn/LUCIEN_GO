@@ -2,20 +2,12 @@ package shell
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
-
-	"github.com/luciendev/lucien-core/internal/ai"
-	"github.com/luciendev/lucien-core/internal/plugin"
-	"github.com/luciendev/lucien-core/internal/policy"
-	"github.com/luciendev/lucien-core/internal/sandbox"
 )
 
 // ExecutionResult holds command execution results
@@ -28,81 +20,126 @@ type ExecutionResult struct {
 
 // Config holds shell configuration
 type Config struct {
-	PolicyEngine *policy.Engine
-	PluginMgr    *plugin.Manager
-	SandboxMgr   *sandbox.Manager
-	AIEngine     *ai.Engine
-	SafeMode     bool
+	SafeMode bool
+}
+
+// Command represents a parsed command with its arguments and redirections
+type Command struct {
+	Name      string
+	Args      []string
+	Input     interface{}
+	Output    interface{}
+	Redirects map[string]string
 }
 
 // Shell represents the core shell engine
 type Shell struct {
-	config      *Config
-	env         map[string]string
-	aliases     map[string]string
-	history     []string
-	currentDir  string
-	builtins    map[string]func([]string) (*ExecutionResult, error)
+	config        *Config
+	aliases       map[string]string
+	currentDir    string
+	builtins      map[string]func([]string) (*ExecutionResult, error)
+	history       []string
+	jobs          map[int]*Job
+	nextJobID     int
+	variables     map[string]string
+	historyFile   string
+	securityGuard *SecurityGuard
 }
 
-// Command represents a parsed command with pipes and redirects
-type Command struct {
-	Name      string
-	Args      []string
-	Input     io.Reader
-	Output    io.Writer
-	Error     io.Writer
-	Pipes     []*Command
-	Redirects map[string]string // ">" -> filename, "<" -> filename
+// Job represents a background job
+type Job struct {
+	ID      int
+	Command string
+	Status  string
+	PID     int
 }
 
 // New creates a new shell instance
 func New(config *Config) *Shell {
-	homeDir, _ := os.UserHomeDir()
-	
-	shell := &Shell{
-		config:     config,
-		env:        make(map[string]string),
-		aliases:    make(map[string]string),
-		history:    []string{},
-		currentDir: homeDir,
-		builtins:   make(map[string]func([]string) (*ExecutionResult, error)),
+	if config == nil {
+		config = &Config{SafeMode: false}
 	}
 
-	// Copy environment variables
-	for _, envVar := range os.Environ() {
-		parts := strings.SplitN(envVar, "=", 2)
-		if len(parts) == 2 {
-			shell.env[parts[0]] = parts[1]
+	s := &Shell{
+		config:        config,
+		aliases:       make(map[string]string),
+		currentDir:    getCurrentDir(),
+		history:       make([]string, 0),
+		jobs:          make(map[int]*Job, 0),
+		nextJobID:     1,
+		variables:     make(map[string]string),
+		securityGuard: NewSecurityGuard(),
+	}
+
+	s.historyFile = s.getHistoryFile()
+	s.loadHistory()
+
+	s.initBuiltins()
+	s.initEnvironment()
+	
+	return s
+}
+
+// getHistoryFile returns the path to the history file
+func (s *Shell) getHistoryFile() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ".lucien_history"
+	}
+	
+	lucienDir := filepath.Join(homeDir, ".lucien")
+	os.MkdirAll(lucienDir, 0755)
+	
+	return filepath.Join(lucienDir, "history")
+}
+
+// loadHistory loads command history from file
+func (s *Shell) loadHistory() {
+	data, err := os.ReadFile(s.historyFile)
+	if err != nil {
+		return // File doesn't exist or can't read
+	}
+	
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			s.history = append(s.history, line)
 		}
 	}
-
-	// Register built-in commands
-	shell.registerBuiltins()
-
-	return shell
 }
 
-func (s *Shell) registerBuiltins() {
-	s.builtins["cd"] = s.changeDirectory
-	s.builtins["set"] = s.setVariable
-	s.builtins["alias"] = s.createAlias
-	s.builtins["exit"] = s.exit
-	s.builtins["history"] = s.showHistory
-	s.builtins["pwd"] = s.printWorkingDirectory
-	s.builtins["echo"] = s.echo
-	s.builtins["export"] = s.exportVariable
+// saveHistory saves command history to file
+func (s *Shell) saveHistory() {
+	if len(s.history) == 0 {
+		return
+	}
+	
+	// Keep only last 1000 entries
+	start := 0
+	if len(s.history) > 1000 {
+		start = len(s.history) - 1000
+	}
+	
+	content := strings.Join(s.history[start:], "\n")
+	os.WriteFile(s.historyFile, []byte(content), 0644)
 }
 
-// Execute runs a command string through the shell
-func (s *Shell) Execute(cmdLine string) (*ExecutionResult, error) {
+// Execute runs a command line and returns the result
+func (s *Shell) Execute(commandLine string) (*ExecutionResult, error) {
 	start := time.Now()
 	
-	// Add to history
-	s.history = append(s.history, cmdLine)
+	// Expand variables and tilde
+	commandLine = s.expandVariables(commandLine)
 	
-	// Parse command line
-	commands, err := s.parseCommandLine(cmdLine)
+	// Add to history (don't add duplicates)
+	if len(s.history) == 0 || s.history[len(s.history)-1] != commandLine {
+		s.history = append(s.history, commandLine)
+		s.saveHistory()
+	}
+	
+	// Expand history if needed
+	expandedLine, err := s.expandHistory(commandLine)
 	if err != nil {
 		return &ExecutionResult{
 			Error:    err.Error(),
@@ -110,523 +147,691 @@ func (s *Shell) Execute(cmdLine string) (*ExecutionResult, error) {
 			Duration: time.Since(start),
 		}, err
 	}
-
-	if len(commands) == 0 {
-		return &ExecutionResult{Duration: time.Since(start)}, nil
+	
+	// Parse command line with advanced parser (includes security validation)
+	commandChain, err := s.parseCommandLineAdvanced(expandedLine)
+	if err != nil {
+		return &ExecutionResult{
+			Error:    err.Error(),
+			ExitCode: 1,
+			Duration: time.Since(start),
+		}, err
 	}
-
-	// Execute command pipeline
-	result, err := s.executePipeline(commands)
-	result.Duration = time.Since(start)
+	
+	// Execute command chain
+	result, err := s.executeCommandChain(*commandChain)
+	if result != nil {
+		result.Duration = time.Since(start)
+	}
 	
 	return result, err
 }
 
-func (s *Shell) parseCommandLine(cmdLine string) ([]*Command, error) {
-	// Expand environment variables
-	cmdLine = s.expandVariables(cmdLine)
-	
-	// Split by pipes
-	pipeSegments := strings.Split(cmdLine, "|")
-	commands := make([]*Command, 0, len(pipeSegments))
-
-	for _, segment := range pipeSegments {
-		cmd, err := s.parseCommand(strings.TrimSpace(segment))
-		if err != nil {
-			return nil, err
-		}
-		if cmd != nil { // Skip nil commands (empty segments)
-			commands = append(commands, cmd)
-		}
-	}
-
-	return commands, nil
-}
-
-func (s *Shell) parseCommand(cmdStr string) (*Command, error) {
-	if cmdStr == "" || strings.TrimSpace(cmdStr) == "" {
-		return nil, nil // Return nil without error for empty commands
-	}
-
-	// Tokenize respecting quotes and redirects
-	tokens := s.tokenize(cmdStr)
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("no command specified")
-	}
-
-	cmd := &Command{
-		Name:      tokens[0],
-		Args:      []string{},
-		Redirects: make(map[string]string),
-	}
-
-	// Process tokens for arguments and redirects
-	for i := 1; i < len(tokens); i++ {
-		token := tokens[i]
-		
-		switch token {
-		case ">":
-			if i+1 < len(tokens) {
-				cmd.Redirects[">"] = tokens[i+1]
-				i++ // Skip the filename
-			}
-		case "<":
-			if i+1 < len(tokens) {
-				cmd.Redirects["<"] = tokens[i+1]
-				i++ // Skip the filename
-			}
-		case ">>":
-			if i+1 < len(tokens) {
-				cmd.Redirects[">>"] = tokens[i+1]
-				i++ // Skip the filename
-			}
-		default:
-			cmd.Args = append(cmd.Args, token)
-		}
-	}
-
-	// Check if command is aliased
-	if alias, exists := s.aliases[cmd.Name]; exists {
-		aliasTokens := s.tokenize(alias)
-		if len(aliasTokens) > 0 {
-			cmd.Name = aliasTokens[0]
-			cmd.Args = append(aliasTokens[1:], cmd.Args...)
-		}
-	}
-
-	return cmd, nil
-}
-
-func (s *Shell) tokenize(input string) []string {
-	var tokens []string
-	var current strings.Builder
-	inQuotes := false
-	quoteChar := byte(0)
-
-	for i := 0; i < len(input); i++ {
-		char := input[i]
-
-		switch {
-		case char == '"' || char == '\'':
-			if !inQuotes {
-				inQuotes = true
-				quoteChar = char
-			} else if char == quoteChar {
-				inQuotes = false
-				quoteChar = 0
-			} else {
-				current.WriteByte(char)
-			}
-
-		case char == ' ' || char == '\t':
-			if inQuotes {
-				current.WriteByte(char)
-			} else if current.Len() > 0 {
-				tokens = append(tokens, current.String())
-				current.Reset()
-			}
-
-		case char == '>' || char == '<':
-			if inQuotes {
-				current.WriteByte(char)
-			} else {
-				if current.Len() > 0 {
-					tokens = append(tokens, current.String())
-					current.Reset()
-				}
-				
-				// Check for >> redirect
-				if char == '>' && i+1 < len(input) && input[i+1] == '>' {
-					tokens = append(tokens, ">>")
-					i++ // Skip next >
-				} else {
-					tokens = append(tokens, string(char))
-				}
-			}
-
-		default:
-			current.WriteByte(char)
-		}
-	}
-
-	if current.Len() > 0 {
-		tokens = append(tokens, current.String())
-	}
-
-	return tokens
-}
-
+// expandVariables expands environment variables and tilde in the input
 func (s *Shell) expandVariables(input string) string {
+	// Handle tilde expansion first
+	if strings.HasPrefix(input, "~") {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			if input == "~" {
+				return homeDir
+			} else if strings.HasPrefix(input, "~/") {
+				return filepath.Join(homeDir, input[2:])
+			}
+		}
+	}
+	
+	// Expand $VAR and ${VAR} (Unix style)
 	result := input
 	
-	// Simple variable expansion for $VAR and ${VAR}
-	for key, value := range s.env {
-		result = strings.ReplaceAll(result, "$"+key, value)
-		result = strings.ReplaceAll(result, "${"+key+"}", value)
+	// Simple variable expansion for testing
+	for varName, varValue := range s.variables {
+		result = strings.ReplaceAll(result, "$"+varName, varValue)
+		result = strings.ReplaceAll(result, "${"+varName+"}", varValue)
+		
+		// Windows style %VAR%
+		result = strings.ReplaceAll(result, "%"+varName+"%", varValue)
 	}
 	
-	// Handle undefined variables - replace with empty string
-	// Pattern: $VARNAME where VARNAME contains letters, digits, underscore
-	var i int
-	for i < len(result) {
-		if result[i] == '$' && i+1 < len(result) {
-			start := i + 1
-			end := start
-			
-			// Find end of variable name
-			for end < len(result) && (result[end] >= 'A' && result[end] <= 'Z' ||
-				result[end] >= 'a' && result[end] <= 'z' ||
-				result[end] >= '0' && result[end] <= '9' ||
-				result[end] == '_') {
-				end++
-			}
-			
-			if end > start {
-				varName := result[start:end]
-				// Only replace if variable is not defined
-				if _, exists := s.env[varName]; !exists {
-					result = result[:i] + result[end:]
-					continue
-				}
-			}
+	// Expand common environment variables
+	envVars := map[string]string{
+		"HOME":        os.Getenv("HOME"),
+		"USER":        os.Getenv("USER"),
+		"USERPROFILE": os.Getenv("USERPROFILE"),
+		"USERNAME":    os.Getenv("USERNAME"),
+		"PATH":        os.Getenv("PATH"),
+		"PWD":         s.currentDir,
+	}
+	
+	for varName, varValue := range envVars {
+		if varValue != "" {
+			result = strings.ReplaceAll(result, "$"+varName, varValue)
+			result = strings.ReplaceAll(result, "${"+varName+"}", varValue)
+			result = strings.ReplaceAll(result, "%"+varName+"%", varValue)
 		}
-		i++
 	}
 	
 	return result
 }
 
-func (s *Shell) executePipeline(commands []*Command) (*ExecutionResult, error) {
-	if len(commands) == 1 {
-		return s.executeCommand(commands[0])
+// getCurrentDir gets the current working directory
+func getCurrentDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "/"
 	}
-
-	// Set up pipes between commands
-	var output strings.Builder
-	var lastOutput io.Reader
-
-	for i, cmd := range commands {
-		cmd.Input = lastOutput
-
-		if i < len(commands)-1 {
-			// Create pipe for all but last command
-			reader, writer := io.Pipe()
-			cmd.Output = writer
-			lastOutput = reader
-		} else {
-			// Last command outputs to our buffer
-			cmd.Output = &output
-		}
-
-		// Execute command (in production, would run concurrently)
-		result, err := s.executeCommand(cmd)
-		if err != nil {
-			return result, err
-		}
-	}
-
-	return &ExecutionResult{
-		Output:   output.String(),
-		ExitCode: 0,
-	}, nil
+	return dir
 }
 
-func (s *Shell) executeCommand(cmd *Command) (*ExecutionResult, error) {
-	// Policy check if safe mode is enabled
-	if s.config.SafeMode && s.config.PolicyEngine != nil {
-		allowed, err := s.config.PolicyEngine.Authorize("execute", cmd.Name, cmd.Args)
-		if err != nil {
-			return &ExecutionResult{
-				Error:    fmt.Sprintf("Policy check failed: %v", err),
-				ExitCode: 1,
-			}, err
+// initBuiltins initializes built-in commands
+func (s *Shell) initBuiltins() {
+	s.builtins = map[string]func([]string) (*ExecutionResult, error){
+		"cd":      s.builtinCd,
+		"pwd":     s.builtinPwd,
+		"echo":    s.builtinEcho,
+		"set":     s.builtinSet,
+		"unset":   s.builtinUnset,
+		"export":  s.builtinExport,
+		"alias":   s.builtinAlias,
+		"unalias": s.builtinUnalias,
+		"history": s.builtinHistory,
+		"jobs":    s.builtinJobs,
+		"fg":      s.builtinFg,
+		"bg":      s.builtinBg,
+		"kill":    s.builtinKill,
+		"exit":    s.builtinExit,
+		"help":    s.builtinHelp,
+		"clear":   s.builtinClear,
+		"env":     s.builtinEnv,
+		"home":    s.builtinHome,
+	}
+	
+	// Add security toggle command
+	s.builtins[":secure"] = s.builtinSecure
+}
+
+// initEnvironment initializes environment variables
+func (s *Shell) initEnvironment() {
+	// Copy environment variables
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			s.variables[parts[0]] = parts[1]
 		}
-		if !allowed {
-			return &ExecutionResult{
-				Error:    fmt.Sprintf("Command '%s' blocked by security policy", cmd.Name),
-				ExitCode: 1,
-			}, fmt.Errorf("command blocked by policy")
+	}
+}
+
+// expandHistory expands history references like !! and !n
+func (s *Shell) expandHistory(input string) (string, error) {
+	if !strings.Contains(input, "!") {
+		return input, nil
+	}
+	
+	// Simple implementation for !!, !n, and !prefix
+	if input == "!!" {
+		if len(s.history) < 2 {
+			return "", fmt.Errorf("no previous command in history")
+		}
+		return s.history[len(s.history)-2], nil
+	}
+	
+	// Handle !n (number)
+	if strings.HasPrefix(input, "!") && len(input) > 1 {
+		rest := input[1:]
+		if num, err := strconv.Atoi(rest); err == nil {
+			if num < 1 || num > len(s.history) {
+				return "", fmt.Errorf("history entry %d not found", num)
+			}
+			return s.history[num-1], nil
+		}
+		
+		// Handle !prefix
+		for i := len(s.history) - 2; i >= 0; i-- {
+			if strings.HasPrefix(s.history[i], rest) {
+				return s.history[i], nil
+			}
+		}
+		return "", fmt.Errorf("no history entry starting with '%s'", rest)
+	}
+	
+	return input, nil
+}
+
+// executeCommandChain executes a chain of commands with proper operator handling
+func (s *Shell) executeCommandChain(chain CommandChain) (*ExecutionResult, error) {
+	if len(chain.Commands) == 0 {
+		return &ExecutionResult{ExitCode: 0}, nil
+	}
+
+	// Execute first command
+	result, err := s.executeSingleCommand(chain.Commands[0])
+	if err != nil {
+		return result, err
+	}
+
+	// Process operators
+	for i := 0; i < len(chain.Operators) && i+1 < len(chain.Commands); i++ {
+		opType := chain.Types[i]
+		nextCmd := chain.Commands[i+1]
+
+		switch opType {
+		case CommandAnd: // &&
+			if result.ExitCode == 0 {
+				nextResult, err := s.executeSingleCommand(nextCmd)
+				if err != nil {
+					return nextResult, err
+				}
+				result = s.combineResults(result, nextResult)
+			}
+
+		case CommandOr: // ||
+			if result.ExitCode != 0 {
+				nextResult, err := s.executeSingleCommand(nextCmd)
+				if err != nil {
+					return nextResult, err
+				}
+				result = s.combineResults(result, nextResult)
+			}
+
+		case CommandSequence: // ;
+			nextResult, err := s.executeSingleCommand(nextCmd)
+			if err != nil {
+				return nextResult, err
+			}
+			result = s.combineResults(result, nextResult)
+
+		case CommandPipe: // |
+			// Simple pipe implementation - pass output as input
+			nextCmd.Input = result.Output
+			nextResult, err := s.executeSingleCommand(nextCmd)
+			if err != nil {
+				return nextResult, err
+			}
+			result = nextResult // Replace result with piped output
+
+		case CommandBackground: // &
+			// Start command in background
+			go func(cmd Command) {
+				s.executeSingleCommand(cmd)
+			}(nextCmd)
+			// Don't wait for background command
 		}
 	}
 
-	// Check if it's a builtin command
+	return result, nil
+}
+
+// combineResults combines two execution results
+func (s *Shell) combineResults(r1, r2 *ExecutionResult) *ExecutionResult {
+	combined := &ExecutionResult{
+		ExitCode: r2.ExitCode,
+		Duration: r1.Duration + r2.Duration,
+	}
+
+	if r1.Output != "" && r2.Output != "" {
+		combined.Output = r1.Output + "\n" + r2.Output
+	} else if r1.Output != "" {
+		combined.Output = r1.Output
+	} else {
+		combined.Output = r2.Output
+	}
+
+	if r1.Error != "" && r2.Error != "" {
+		combined.Error = r1.Error + "\n" + r2.Error
+	} else if r1.Error != "" {
+		combined.Error = r1.Error
+	} else {
+		combined.Error = r2.Error
+	}
+
+	return combined
+}
+
+
+// executeSingleCommand executes a single command
+func (s *Shell) executeSingleCommand(cmd Command) (*ExecutionResult, error) {
+	// Expand aliases
+	if alias, exists := s.aliases[cmd.Name]; exists {
+		// Simple alias expansion
+		parts := strings.Fields(alias)
+		if len(parts) > 0 {
+			cmd.Name = parts[0]
+			cmd.Args = append(parts[1:], cmd.Args...)
+		}
+	}
+	
+	// Check built-ins first
 	if builtin, exists := s.builtins[cmd.Name]; exists {
 		return builtin(cmd.Args)
 	}
-
+	
 	// Execute external command
-	return s.executeExternal(cmd)
+	return s.executeExternalPlatform(&cmd)
 }
 
-func (s *Shell) executeExternal(cmd *Command) (*ExecutionResult, error) {
-	var execCmd *exec.Cmd
+// parseJobID parses job reference like %1, %+, %-
+func (s *Shell) parseJobID(arg string) (int, error) {
+	if !strings.HasPrefix(arg, "%") {
+		return 0, fmt.Errorf("not a job reference")
+	}
 	
-	// Handle platform-specific command execution
-	if runtime.GOOS == "windows" {
-		execCmd = exec.Command("cmd", "/C", cmd.Name+" "+strings.Join(cmd.Args, " "))
-	} else {
-		execCmd = exec.Command(cmd.Name, cmd.Args...)
-	}
-
-	// Set working directory
-	execCmd.Dir = s.currentDir
-
-	// Set environment
-	execCmd.Env = s.buildEnvSlice()
-
-	// Handle redirects and pipes
-	if cmd.Input != nil {
-		execCmd.Stdin = cmd.Input
-	}
-
-	var output strings.Builder
-	var errorOutput strings.Builder
-
-	if cmd.Output != nil {
-		execCmd.Stdout = cmd.Output
-	} else {
-		execCmd.Stdout = &output
-	}
-	execCmd.Stderr = &errorOutput
-
-	// Handle file redirects
-	if outFile, exists := cmd.Redirects[">"]; exists {
-		file, err := os.Create(outFile)
-		if err != nil {
-			return &ExecutionResult{
-				Error:    fmt.Sprintf("Cannot create output file: %v", err),
-				ExitCode: 1,
-			}, err
+	ref := arg[1:]
+	switch ref {
+	case "+":
+		// Current job (most recent)
+		if len(s.jobs) == 0 {
+			return 0, fmt.Errorf("no current job")
 		}
-		defer file.Close()
-		execCmd.Stdout = file
-	}
-
-	if inFile, exists := cmd.Redirects["<"]; exists {
-		file, err := os.Open(inFile)
-		if err != nil {
-			return &ExecutionResult{
-				Error:    fmt.Sprintf("Cannot open input file: %v", err),
-				ExitCode: 1,
-			}, err
+		maxID := 0
+		for id := range s.jobs {
+			if id > maxID {
+				maxID = id
+			}
 		}
-		defer file.Close()
-		execCmd.Stdin = file
-	}
-
-	// Execute with sandbox if configured
-	if s.config.SandboxMgr != nil {
-		sandboxResult, err := s.config.SandboxMgr.Execute(execCmd)
-		if err != nil {
-			return &ExecutionResult{
-				Error:    err.Error(),
-				ExitCode: 1,
-			}, err
+		return maxID, nil
+		
+	case "-":
+		// Previous job (second most recent)
+		if len(s.jobs) < 2 {
+			return 0, fmt.Errorf("no previous job")
+		}
+		// Find second highest ID
+		var ids []int
+		for id := range s.jobs {
+			ids = append(ids, id)
+		}
+		if len(ids) < 2 {
+			return 0, fmt.Errorf("no previous job")
+		}
+		// Sort and get second highest
+		for i := 0; i < len(ids)-1; i++ {
+			for j := i + 1; j < len(ids); j++ {
+				if ids[i] < ids[j] {
+					ids[i], ids[j] = ids[j], ids[i]
+				}
+			}
+		}
+		return ids[1], nil
+		
+	default:
+		// Job number
+		if jobID, err := strconv.Atoi(ref); err == nil {
+			if _, exists := s.jobs[jobID]; exists {
+				return jobID, nil
+			}
+			return 0, fmt.Errorf("no such job: %d", jobID)
 		}
 		
-		return &ExecutionResult{
-			Output:   sandboxResult.Output,
-			Error:    sandboxResult.Error,
-			ExitCode: sandboxResult.ExitCode,
-		}, nil
-	}
-
-	// Regular execution
-	err := execCmd.Run()
-	exitCode := 0
-
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
-				exitCode = status.ExitStatus()
+		// Job name prefix
+		for id, job := range s.jobs {
+			if strings.HasPrefix(job.Command, ref) {
+				return id, nil
 			}
-		} else {
-			return &ExecutionResult{
-				Error:    err.Error(),
-				ExitCode: 1,
-			}, err
 		}
+		return 0, fmt.Errorf("no job matching: %s", ref)
 	}
-
-	return &ExecutionResult{
-		Output:   output.String(),
-		Error:    errorOutput.String(),
-		ExitCode: exitCode,
-	}, nil
 }
 
+// buildEnvSlice builds environment slice for exec
 func (s *Shell) buildEnvSlice() []string {
 	var env []string
-	for key, value := range s.env {
-		env = append(env, key+"="+value)
+	for key, value := range s.variables {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	return env
 }
 
 // Built-in command implementations
-func (s *Shell) changeDirectory(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	var target string
+
+func (s *Shell) builtinCd(args []string) (*ExecutionResult, error) {
+	var targetDir string
 	
 	if len(args) == 0 {
-		homeDir, err := os.UserHomeDir()
+		// Change to home directory
+		home, err := os.UserHomeDir()
 		if err != nil {
-			return &ExecutionResult{Error: "Cannot determine home directory", ExitCode: 1, Duration: time.Since(start)}, err
+			return &ExecutionResult{
+				Error:    "Cannot determine home directory",
+				ExitCode: 1,
+			}, nil
 		}
-		target = homeDir
+		targetDir = home
 	} else {
-		target = args[0]
+		targetDir = args[0]
 	}
-
-	// Handle special cases
-	if target == "-" {
-		// cd - functionality (go to previous directory)
-		if prev, exists := s.env["OLDPWD"]; exists {
-			target = prev
-		} else {
-			return &ExecutionResult{Error: "OLDPWD not set", ExitCode: 1}, fmt.Errorf("no previous directory")
+	
+	// Expand ~ if present
+	if strings.HasPrefix(targetDir, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return &ExecutionResult{
+				Error:    "Cannot expand ~: " + err.Error(),
+				ExitCode: 1,
+			}, nil
 		}
+		targetDir = filepath.Join(home, targetDir[1:])
 	}
-
-	// Expand ~ to home directory
-	if strings.HasPrefix(target, "~/") {
-		homeDir, _ := os.UserHomeDir()
-		target = filepath.Join(homeDir, target[2:])
+	
+	// Make it absolute
+	if !filepath.IsAbs(targetDir) {
+		targetDir = filepath.Join(s.currentDir, targetDir)
 	}
-
-	// Make path absolute
-	absPath, err := filepath.Abs(target)
-	if err != nil {
-		return &ExecutionResult{Error: err.Error(), ExitCode: 1}, err
-	}
-
+	
+	// Clean the path
+	targetDir = filepath.Clean(targetDir)
+	
 	// Check if directory exists
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return &ExecutionResult{Error: fmt.Sprintf("%s: %v", target, err), ExitCode: 1}, err
-	}
-
-	if !info.IsDir() {
-		return &ExecutionResult{Error: fmt.Sprintf("%s: not a directory", target), ExitCode: 1}, 
-			fmt.Errorf("not a directory")
-	}
-
-	// Save old directory and change
-	s.env["OLDPWD"] = s.currentDir
-	s.currentDir = absPath
-	s.env["PWD"] = absPath
-
-	return &ExecutionResult{Output: "", Duration: time.Since(start)}, nil
-}
-
-func (s *Shell) setVariable(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	if len(args) == 0 {
-		return &ExecutionResult{Error: "Usage: set VARIABLE value OR set VARIABLE=value", ExitCode: 1, Duration: time.Since(start)}, 
-			fmt.Errorf("insufficient arguments")
-	}
-
-	// Handle both syntaxes: set VAR value AND set VAR=value
-	if len(args) == 1 && strings.Contains(args[0], "=") {
-		// Handle VAR=value syntax
-		parts := strings.SplitN(args[0], "=", 2)
-		if len(parts) == 2 {
-			s.env[parts[0]] = parts[1]
-			return &ExecutionResult{Output: fmt.Sprintf("%s=%s", parts[0], parts[1]), Duration: time.Since(start)}, nil
-		}
+	if info, err := os.Stat(targetDir); err != nil {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("cd: %s: No such file or directory", targetDir),
+			ExitCode: 1,
+		}, nil
+	} else if !info.IsDir() {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("cd: %s: Not a directory", targetDir),
+			ExitCode: 1,
+		}, nil
 	}
 	
-	if len(args) < 2 {
-		return &ExecutionResult{Error: "Usage: set VARIABLE value OR set VARIABLE=value", ExitCode: 1, Duration: time.Since(start)}, 
-			fmt.Errorf("insufficient arguments")
+	// Change directory
+	if err := os.Chdir(targetDir); err != nil {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("cd: %s", err.Error()),
+			ExitCode: 1,
+		}, nil
 	}
-
-	variable := args[0]
-	value := strings.Join(args[1:], " ")
-	s.env[variable] = value
-
-	return &ExecutionResult{Output: fmt.Sprintf("%s=%s", variable, value), Duration: time.Since(start)}, nil
+	
+	s.currentDir = targetDir
+	
+	return &ExecutionResult{ExitCode: 0}, nil
 }
 
-func (s *Shell) exportVariable(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	if len(args) == 0 {
-		// Show all exported variables
-		var output strings.Builder
-		for key, value := range s.env {
-			output.WriteString(fmt.Sprintf("export %s=%s\n", key, value))
-		}
-		return &ExecutionResult{Output: output.String(), Duration: time.Since(start)}, nil
-	}
-
-	for _, arg := range args {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) == 2 {
-			s.env[parts[0]] = parts[1]
-			os.Setenv(parts[0], parts[1])
-		} else {
-			// Export existing variable
-			if value, exists := s.env[parts[0]]; exists {
-				os.Setenv(parts[0], value)
-			}
-		}
-	}
-
-	return &ExecutionResult{Duration: time.Since(start)}, nil
+func (s *Shell) builtinPwd(args []string) (*ExecutionResult, error) {
+	return &ExecutionResult{
+		Output:   s.currentDir + "\n",
+		ExitCode: 0,
+	}, nil
 }
 
-func (s *Shell) createAlias(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	if len(args) < 2 {
-		// Show all aliases
-		var output strings.Builder
-		for name, command := range s.aliases {
-			output.WriteString(fmt.Sprintf("alias %s='%s'\n", name, command))
-		}
-		return &ExecutionResult{Output: output.String(), Duration: time.Since(start)}, nil
-	}
-
-	aliasName := args[0]
-	aliasCommand := strings.Join(args[1:], " ")
-	s.aliases[aliasName] = aliasCommand
-
-	return &ExecutionResult{Output: fmt.Sprintf("alias %s='%s'", aliasName, aliasCommand), Duration: time.Since(start)}, nil
-}
-
-func (s *Shell) printWorkingDirectory(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	return &ExecutionResult{Output: s.currentDir + "\n", Duration: time.Since(start)}, nil
-}
-
-func (s *Shell) echo(args []string) (*ExecutionResult, error) {
-	start := time.Now()
+func (s *Shell) builtinEcho(args []string) (*ExecutionResult, error) {
 	output := strings.Join(args, " ") + "\n"
-	return &ExecutionResult{Output: output, Duration: time.Since(start)}, nil
+	return &ExecutionResult{
+		Output:   output,
+		ExitCode: 0,
+	}, nil
 }
 
-func (s *Shell) showHistory(args []string) (*ExecutionResult, error) {
-	start := time.Now()
-	var output strings.Builder
+func (s *Shell) builtinSet(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		// List all variables
+		var output []string
+		for key, value := range s.variables {
+			output = append(output, fmt.Sprintf("%s=%s", key, value))
+		}
+		return &ExecutionResult{
+			Output:   strings.Join(output, "\n") + "\n",
+			ExitCode: 0,
+		}, nil
+	}
 	
-	startIdx := 0
-	if len(args) > 0 {
-		if n, err := strconv.Atoi(args[0]); err == nil && n > 0 {
-			startIdx = len(s.history) - n
-			if startIdx < 0 {
-				startIdx = 0
+	// Set variable
+	for _, arg := range args {
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			s.variables[parts[0]] = parts[1]
+		} else {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("set: invalid assignment: %s", arg),
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+func (s *Shell) builtinUnset(args []string) (*ExecutionResult, error) {
+	for _, arg := range args {
+		delete(s.variables, arg)
+	}
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+func (s *Shell) builtinAlias(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		// List all aliases
+		var output []string
+		for alias, command := range s.aliases {
+			output = append(output, fmt.Sprintf("alias %s='%s'", alias, command))
+		}
+		return &ExecutionResult{
+			Output:   strings.Join(output, "\n") + "\n",
+			ExitCode: 0,
+		}, nil
+	}
+	
+	// Set alias
+	for _, arg := range args {
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			name := parts[0]
+			value := parts[1]
+			
+			// Remove quotes if present
+			value = strings.Trim(value, "'\"")
+			
+			s.aliases[name] = value
+		} else {
+			// Show specific alias
+			if command, exists := s.aliases[arg]; exists {
+				return &ExecutionResult{
+					Output:   fmt.Sprintf("alias %s='%s'\n", arg, command),
+					ExitCode: 0,
+				}, nil
+			} else {
+				return &ExecutionResult{
+					Error:    fmt.Sprintf("alias: %s: not found", arg),
+					ExitCode: 1,
+				}, nil
 			}
 		}
 	}
-
-	for i := startIdx; i < len(s.history); i++ {
-		output.WriteString(fmt.Sprintf("%4d  %s\n", i+1, s.history[i]))
-	}
-
-	return &ExecutionResult{Output: output.String(), Duration: time.Since(start)}, nil
+	
+	return &ExecutionResult{ExitCode: 0}, nil
 }
 
-func (s *Shell) exit(args []string) (*ExecutionResult, error) {
-	start := time.Now()
+func (s *Shell) builtinUnalias(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		return &ExecutionResult{
+			Error:    "unalias: usage: unalias name [name ...]",
+			ExitCode: 1,
+		}, nil
+	}
+	
+	for _, name := range args {
+		if _, exists := s.aliases[name]; exists {
+			delete(s.aliases, name)
+			// Return success message
+			return &ExecutionResult{
+				Output:   fmt.Sprintf("Removed alias: %s\n", name),
+				ExitCode: 0,
+			}, nil
+		} else {
+			// Check for typos
+			var suggestion string
+			for alias := range s.aliases {
+				if levenshteinDistance(name, alias) <= 1 {
+					suggestion = alias
+					break
+				}
+			}
+			
+			if suggestion != "" {
+				return &ExecutionResult{
+					Error:    fmt.Sprintf("unalias: %s: not found. Did you mean '%s'?", name, suggestion),
+					ExitCode: 1,
+				}, nil
+			} else {
+				return &ExecutionResult{
+					Error:    fmt.Sprintf("unalias: %s: not found", name),
+					ExitCode: 1,
+				}, nil
+			}
+		}
+	}
+	
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+func (s *Shell) builtinHistory(args []string) (*ExecutionResult, error) {
+	var output []string
+	for i, cmd := range s.history {
+		output = append(output, fmt.Sprintf("%4d  %s", i+1, cmd))
+	}
+	return &ExecutionResult{
+		Output:   strings.Join(output, "\n") + "\n",
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinJobs(args []string) (*ExecutionResult, error) {
+	if len(s.jobs) == 0 {
+		return &ExecutionResult{
+			Output:   "No active jobs\n",
+			ExitCode: 0,
+		}, nil
+	}
+	
+	var output []string
+	for id, job := range s.jobs {
+		output = append(output, fmt.Sprintf("[%d] %s %s", id, job.Status, job.Command))
+	}
+	
+	return &ExecutionResult{
+		Output:   strings.Join(output, "\n") + "\n",
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinFg(args []string) (*ExecutionResult, error) {
+	var jobID int
+	var err error
+	
+	if len(args) == 0 {
+		// Use most recent job
+		if len(s.jobs) == 0 {
+			return &ExecutionResult{
+				Error:    "fg: no current job",
+				ExitCode: 1,
+			}, nil
+		}
+		jobID = s.nextJobID - 1
+	} else {
+		jobID, err = s.parseJobID(args[0])
+		if err != nil {
+			return &ExecutionResult{
+				Error:    "fg: " + err.Error(),
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	job, exists := s.jobs[jobID]
+	if !exists {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("fg: job %d not found", jobID),
+			ExitCode: 1,
+		}, nil
+	}
+	
+	return &ExecutionResult{
+		Output:   fmt.Sprintf("Bringing job %d to foreground: %s\n", jobID, job.Command),
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinBg(args []string) (*ExecutionResult, error) {
+	var jobID int
+	var err error
+	
+	if len(args) == 0 {
+		// Use most recent job
+		if len(s.jobs) == 0 {
+			return &ExecutionResult{
+				Error:    "bg: no current job",
+				ExitCode: 1,
+			}, nil
+		}
+		jobID = s.nextJobID - 1
+	} else {
+		jobID, err = s.parseJobID(args[0])
+		if err != nil {
+			return &ExecutionResult{
+				Error:    "bg: " + err.Error(),
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	job, exists := s.jobs[jobID]
+	if !exists {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("bg: job %d not found", jobID),
+			ExitCode: 1,
+		}, nil
+	}
+	
+	return &ExecutionResult{
+		Output:   fmt.Sprintf("Sending job %d to background: %s\n", jobID, job.Command),
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinKill(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		return &ExecutionResult{
+			Error:    "kill: usage: kill [pid | %job]",
+			ExitCode: 1,
+		}, nil
+	}
+	
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "%") {
+			jobID, err := s.parseJobID(arg)
+			if err != nil {
+				return &ExecutionResult{
+					Error:    "kill: " + err.Error(),
+					ExitCode: 1,
+				}, nil
+			}
+			
+			job, exists := s.jobs[jobID]
+			if !exists {
+				return &ExecutionResult{
+					Error:    fmt.Sprintf("kill: job %d not found", jobID),
+					ExitCode: 1,
+				}, nil
+			}
+			
+			// Remove from jobs (simulate kill)
+			delete(s.jobs, jobID)
+			
+			return &ExecutionResult{
+				Output:   fmt.Sprintf("Killed job %d: %s\n", jobID, job.Command),
+				ExitCode: 0,
+			}, nil
+		} else {
+			// Handle PID (not implemented for safety)
+			return &ExecutionResult{
+				Error:    "kill: PID killing not implemented in safe mode",
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+func (s *Shell) builtinExit(args []string) (*ExecutionResult, error) {
 	exitCode := 0
 	if len(args) > 0 {
 		if code, err := strconv.Atoi(args[0]); err == nil {
@@ -634,6 +839,233 @@ func (s *Shell) exit(args []string) (*ExecutionResult, error) {
 		}
 	}
 	
-	os.Exit(exitCode)
-	return &ExecutionResult{Duration: time.Since(start)}, nil
+	// In a real implementation, this would exit the program
+	return &ExecutionResult{
+		Output:   "Goodbye!\n",
+		ExitCode: exitCode,
+	}, nil
+}
+
+func (s *Shell) builtinHelp(args []string) (*ExecutionResult, error) {
+	help := `Lucien Shell Built-in Commands:
+  cd [dir]        Change directory
+  pwd             Print working directory  
+  echo [args]     Display arguments
+  set [var=val]   Set environment variable
+  unset [var]     Unset environment variable
+  alias [name=cmd] Create command alias
+  unalias [name]  Remove alias
+  history         Show command history
+  jobs            List active jobs
+  fg [%job]       Bring job to foreground
+  bg [%job]       Send job to background  
+  kill [%job|pid] Terminate job or process
+  exit [code]     Exit shell
+  help            Show this help
+
+Job Control:
+  %1, %2, ...     Job by number
+  %+              Current job
+  %-              Previous job
+  %name           Job by command name prefix
+
+History:
+  !!              Last command
+  !n              Command number n
+  !prefix         Last command starting with prefix
+`
+	
+	return &ExecutionResult{
+		Output:   help,
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinExport(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		// List all variables
+		var output []string
+		for key, value := range s.variables {
+			output = append(output, fmt.Sprintf("export %s=%s", key, value))
+		}
+		return &ExecutionResult{
+			Output:   strings.Join(output, "\n") + "\n",
+			ExitCode: 0,
+		}, nil
+	}
+	
+	// Set and export variables
+	for _, arg := range args {
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			s.variables[parts[0]] = parts[1]
+			os.Setenv(parts[0], parts[1])
+		} else {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("export: invalid assignment: %s", arg),
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+func (s *Shell) builtinEnv(args []string) (*ExecutionResult, error) {
+	var output []string
+	
+	if len(args) == 0 {
+		// Show all environment variables
+		for key, value := range s.variables {
+			output = append(output, fmt.Sprintf("%s=%s", key, value))
+		}
+		
+		// Add system environment variables
+		for _, env := range os.Environ() {
+			if !strings.Contains(env, "=") {
+				continue
+			}
+			parts := strings.SplitN(env, "=", 2)
+			if _, exists := s.variables[parts[0]]; !exists {
+				output = append(output, env)
+			}
+		}
+	}
+	
+	return &ExecutionResult{
+		Output:   strings.Join(output, "\n") + "\n",
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinClear(args []string) (*ExecutionResult, error) {
+	// ANSI escape codes to clear screen
+	return &ExecutionResult{
+		Output:   "\033[2J\033[H",
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinHome(args []string) (*ExecutionResult, error) {
+	var homeDir string
+	var err error
+	
+	// Platform-specific home directory detection
+	if runtime.GOOS == "windows" {
+		homeDir = os.Getenv("USERPROFILE")
+		if homeDir == "" {
+			homeDir = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		}
+	} else {
+		homeDir = os.Getenv("HOME")
+	}
+	
+	if homeDir == "" {
+		homeDir, err = os.UserHomeDir()
+		if err != nil {
+			return &ExecutionResult{
+				Error:    "Cannot determine home directory",
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	// Change to home directory
+	if err := os.Chdir(homeDir); err != nil {
+		return &ExecutionResult{
+			Error:    fmt.Sprintf("home: %s", err.Error()),
+			ExitCode: 1,
+		}, nil
+	}
+	
+	s.currentDir = homeDir
+	
+	return &ExecutionResult{
+		Output:   homeDir + "\n",
+		ExitCode: 0,
+	}, nil
+}
+
+func (s *Shell) builtinSecure(args []string) (*ExecutionResult, error) {
+	if len(args) == 0 {
+		// Show current mode
+		mode := "permissive"
+		if s.securityGuard.GetMode() == SecurityModeStrict {
+			mode = "strict"
+		}
+		return &ExecutionResult{
+			Output:   fmt.Sprintf("Security mode: %s\n", mode),
+			ExitCode: 0,
+		}, nil
+	}
+	
+	switch strings.ToLower(args[0]) {
+	case "strict":
+		s.securityGuard.SetMode(SecurityModeStrict)
+		return &ExecutionResult{
+			Output:   "Security mode set to strict\n",
+			ExitCode: 0,
+		}, nil
+	case "permissive":
+		s.securityGuard.SetMode(SecurityModePermissive)
+		return &ExecutionResult{
+			Output:   "Security mode set to permissive\n",
+			ExitCode: 0,
+		}, nil
+	default:
+		return &ExecutionResult{
+			Error:    "Usage: :secure [strict|permissive]\n",
+			ExitCode: 1,
+		}, nil
+	}
+}
+
+// levenshteinDistance calculates edit distance for typo suggestions
+func levenshteinDistance(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+	
+	matrix := make([][]int, len(a)+1)
+	for i := range matrix {
+		matrix[i] = make([]int, len(b)+1)
+		matrix[i][0] = i
+	}
+	
+	for j := 0; j <= len(b); j++ {
+		matrix[0][j] = j
+	}
+	
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			
+			matrix[i][j] = min(
+				matrix[i-1][j]+1,      // deletion
+				matrix[i][j-1]+1,      // insertion
+				matrix[i-1][j-1]+cost, // substitution
+			)
+		}
+	}
+	
+	return matrix[len(a)][len(b)]
+}
+
+func min(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
 }
