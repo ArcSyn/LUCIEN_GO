@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/luciendev/lucien-core/internal/ai"
-	"github.com/luciendev/lucien-core/internal/env"
-	"github.com/luciendev/lucien-core/internal/history"
-	"github.com/luciendev/lucien-core/internal/jobs"
-	"github.com/luciendev/lucien-core/internal/policy"
-	"github.com/luciendev/lucien-core/internal/plugin"
-	"github.com/luciendev/lucien-core/internal/sandbox"
-	"github.com/luciendev/lucien-core/internal/shell"
-	"github.com/luciendev/lucien-core/internal/ui"
+	"github.com/ArcSyn/LucienCLI/internal/ai"
+	"github.com/ArcSyn/LucienCLI/internal/env"
+	"github.com/ArcSyn/LucienCLI/internal/history"
+	"github.com/ArcSyn/LucienCLI/internal/jobs"
+	"github.com/ArcSyn/LucienCLI/internal/policy"
+	"github.com/ArcSyn/LucienCLI/internal/plugin"
+	"github.com/ArcSyn/LucienCLI/internal/sandbox"
+	"github.com/ArcSyn/LucienCLI/internal/shell"
+	"github.com/ArcSyn/LucienCLI/internal/ui"
 )
 
 var (

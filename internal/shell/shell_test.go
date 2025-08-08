@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luciendev/lucien-core/internal/env"
-	"github.com/luciendev/lucien-core/internal/history"
+	"github.com/ArcSyn/LucienCLI/internal/env"
+	"github.com/ArcSyn/LucienCLI/internal/history"
 )
 
 func TestShellParsing(t *testing.T) {

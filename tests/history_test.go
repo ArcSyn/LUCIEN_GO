@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luciendev/lucien-core/internal/shell"
+	"github.com/ArcSyn/LucienCLI/internal/shell"
 )
 
 func TestHistoryExpansion(t *testing.T) {

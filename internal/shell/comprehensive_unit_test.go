@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luciendev/lucien-core/internal/env"
-	"github.com/luciendev/lucien-core/internal/history"
+	"github.com/ArcSyn/LucienCLI/internal/env"
+	"github.com/ArcSyn/LucienCLI/internal/history"
 )
 
 // TestComprehensiveShellFunctionality tests all major shell features systematically

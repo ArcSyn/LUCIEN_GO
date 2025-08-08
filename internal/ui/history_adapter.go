@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/luciendev/lucien-core/internal/completion"
-	"github.com/luciendev/lucien-core/internal/history"
+	"github.com/ArcSyn/LucienCLI/internal/completion"
+	"github.com/ArcSyn/LucienCLI/internal/history"
 )
 
 // HistoryAdapter adapts the history manager to work with the completion engine

@@ -1,4 +1,4 @@
-module github.com/luciendev/lucien-core
+module github.com/ArcSyn/LucienCLI
 
 go 1.21
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luciendev/lucien-core/internal/completion"
+	"github.com/ArcSyn/LucienCLI/internal/completion"
 )
 
 func TestBasicCompletion(t *testing.T) {

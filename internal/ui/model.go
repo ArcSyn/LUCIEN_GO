@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/luciendev/lucien-core/internal/ai"
-	"github.com/luciendev/lucien-core/internal/completion"
-	"github.com/luciendev/lucien-core/internal/shell"
+	"github.com/ArcSyn/LucienCLI/internal/ai"
+	"github.com/ArcSyn/LucienCLI/internal/completion"
+	"github.com/ArcSyn/LucienCLI/internal/shell"
 )
 
 
