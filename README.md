@@ -1,304 +1,238 @@
-# 🧠 Lucien CLI - AI-Enhanced Shell Replacement
+# 🧠 Lucien CLI
 
-**The world's most intelligent command-line interface**
+[![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://github.com/ArcSyn/LUCIEN_GO/workflows/CI/badge.svg)](https://github.com/ArcSyn/LUCIEN_GO/actions)
 
-Lucien CLI combines the power of traditional shell functionality with cutting-edge artificial intelligence to create a terminal experience that learns, adapts, and assists you in real-time.
+> A next-generation command-line shell with built-in security, advanced parsing, and intelligent command chaining.
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+Lucien CLI transforms your terminal experience with production-grade security controls, sophisticated operator handling, and cross-platform compatibility. Built for developers who need both power and protection.
 
-> 🧙 *"Where Intelligence Meets Command Line"*
+## ✨ Features
 
----
+### 🔧 Core Implementation
+- **Security Guard System**: Post-parsing validation with strict/permissive modes
+- **Full Operator Support**: `&&`, `||`, `;`, `|`, `&` with precedence and short-circuiting
+- **Advanced Parser**: Quote-aware parsing; treats operators inside quotes as literals
+- **Command Injection Protection**: Whitelist-based validation + dangerous pattern detection
+- **Variable Expansion**: `$VAR`, `${VAR}`, `%VAR%` cross-platform
+- **Tilde Expansion**: `~` and `~/` for home directory shortcuts
 
-## 🚀 Revolutionary Features
+### 🛡️ Security Features
+- `:secure strict` → blocks risky chained commands unless whitelisted
+- `:secure permissive` → normal shell behavior (default)
+- Whitelisted builtins: echo, pwd, cd, ls, clear, home, etc.
 
-### 🧠 Intelligent Command Prediction
-- **Learns your patterns** and predicts commands before you finish typing
-- **Auto-executes safe commands** when confidence is high
-- **Context-aware suggestions** based on your current project and workflow
+### 🔨 Enhanced Builtins
+- `home` → go to platform-specific home dir
+- `export` → set environment variables
+- `env` → list environment variables
+- `clear` → ANSI screen clear
+- Aliases, history, job control
 
-### 🤖 Real-time AI Pair Programming
-- **Live code analysis** as you work
-- **Intelligent error resolution** with specific fixes
-- **Import suggestions** and best practice enforcement
-- **Project-aware assistance**
+### 🚀 Production Features
+- `--batch` flag for non-interactive execution
+- History persistence at `~/.lucien/history`
+- Cross-platform: Windows, macOS, Linux
+- Graceful error handling for invalid commands
 
-### 🎯 Adaptive Workflow Orchestration
-- **Deep project analysis** understands your entire codebase
-- **Automated workflow generation** for complex tasks
-- **Performance optimization** based on execution history
-- **Risk assessment and mitigation**
+## 🚀 Quick Start
 
----
+### Installation
 
-## ⚡ Quick Start
+#### Windows (PowerShell)
+```powershell
+# Download latest release
+Invoke-WebRequest -Uri "https://github.com/ArcSyn/LUCIEN_GO/releases/latest/download/lucien-windows-amd64.exe" -OutFile "lucien.exe"
+# Move to PATH
+Move-Item lucien.exe "$env:USERPROFILE\bin\lucien.exe"
+```
 
+#### macOS
 ```bash
-# Clone and setup
-git clone https://github.com/your-username/lucien-cli.git
-cd lucien-cli
-pip install -r requirements.txt
+# Using Homebrew (coming soon)
+# brew install arcsyn/tap/lucien
 
-# Test installation
-python -m cli.main --help
-
-# Start interactive shell
-python -m cli.main interactive
+# Or download directly
+curl -L "https://github.com/ArcSyn/LUCIEN_GO/releases/latest/download/lucien-darwin-amd64" -o lucien
+chmod +x lucien
+sudo mv lucien /usr/local/bin/
 ```
 
----
-
-## 🔥 Core Capabilities
-
-### Complete Shell Replacement
+#### Linux
 ```bash
-# All standard shell features
-lucien> ls -la | grep ".py" > python_files.txt
-lucien> cd ~/projects && git status
-lucien> export PATH="/new/path:$PATH"
-
-# Enhanced with AI
-lucien> gi[TAB] → git status (auto-predicted)
-lucien> # Suggests: git add . (confidence: 87%)
+curl -L "https://github.com/ArcSyn/LUCIEN_GO/releases/latest/download/lucien-linux-amd64" -o lucien
+chmod +x lucien
+sudo mv lucien /usr/local/bin/
 ```
 
-### BMAD Method Agents
+#### Build from Source
 ```bash
-# Build Agent - Smart project building
-lucien cast agent build "setup python project"
-
-# Manage Agent - Environment management
-lucien cast agent manage "show system info"
-
-# Analyze Agent - Deep code analysis
-lucien cast agent analyze "find security issues"
-
-# MCP Agent - Natural language processing
-lucien cast agent mcp_agent "find all TODO comments and summarize"
+git clone https://github.com/ArcSyn/LUCIEN_GO.git
+cd LUCIEN_GO
+go build -o lucien ./cmd/lucien
 ```
 
-### AI Intelligence System
+### First Run
+
+Start Lucien in interactive mode:
 ```bash
-# Get intelligent predictions
-lucien ai predict "git"
-
-# Start real-time copilot
-lucien ai start-copilot
-
-# Analyze errors with AI
-lucien ai analyze-error "ModuleNotFoundError: No module named 'requests'"
-
-# Project insights
-lucien ai project-insights
+lucien
 ```
 
-### PowerShell 7 Parity
+Or run commands in batch mode:
 ```bash
-# Check compatibility
-lucien ps check-parity
-
-# PowerShell mode
-lucien ps powershell-mode
-PS> Get-ChildItem -Recurse  # Auto-translates to: find . -type f
-
-# Install PowerShell aliases
-lucien ps install-powershell-aliases
+echo "pwd && echo 'Hello Lucien'" | lucien --batch
 ```
 
----
+## 🎯 Usage Examples
 
-## 🏗 Architecture
-
-```
-Lucien CLI/
-├── core/                    # Core systems
-│   ├── shell_parser.py     # Advanced shell parsing
-│   ├── shell_executor.py   # Command execution engine
-│   ├── intelligence.py     # AI prediction system
-│   ├── copilot.py         # Real-time programming assistant
-│   ├── orchestrator.py    # Workflow orchestration
-│   ├── config.py          # Configuration management
-│   └── claude_memory.py   # Persistent AI memory
-├── agents/                  # BMAD Method agents
-│   ├── build.py           # Build automation
-│   ├── manage.py          # System management
-│   ├── analyze.py         # Code analysis
-│   └── mcp_agent.py       # Natural language processing
-├── cli/commands/           # Command implementations
-└── lucien/ui.py           # Beautiful terminal UI
-```
-
----
-
-## 📊 Feature Comparison
-
-| Feature | Bash/Zsh | PowerShell | Lucien CLI |
-|---------|-----------|------------|-------------|
-| Command Execution | ✅ | ✅ | ✅ |
-| Pipes & Redirects | ✅ | ✅ | ✅ |
-| Variables & Env | ✅ | ✅ | ✅ |
-| Scripting | ✅ | ✅ | ✅ |
-| **AI Predictions** | ❌ | ❌ | ✅ |
-| **Real-time Copilot** | ❌ | ❌ | ✅ |
-| **Project Consciousness** | ❌ | ❌ | ✅ |
-| **Adaptive Workflows** | ❌ | ❌ | ✅ |
-| **Natural Language** | ❌ | ❌ | ✅ |
-| **Memory & Learning** | ❌ | ❌ | ✅ |
-
----
-
-## 🎯 Use Cases
-
-### Development Workflow
+### Basic Commands
 ```bash
-# Lucien understands your project and suggests next steps
-lucien> cd my-python-project
-lucien> # AI suggests: pip install -r requirements.txt (new deps detected)
+lucien> pwd
+/home/user
 
-# Real-time coding assistance
-lucien ai start-copilot  # Monitors code changes
-# Automatically suggests fixes for import errors, syntax issues
+lucien> echo "Welcome to Lucien"
+Welcome to Lucien
+
+lucien> home
+/home/user
 ```
 
-### DevOps & Automation
+### Operator Chaining
 ```bash
-# Create intelligent workflows
-lucien ai create-workflow "deploy to production"
-# Generates: test → build → package → deploy steps
+# Sequential execution
+lucien> echo "step1" && echo "step2"
+step1
+step2
 
-# Execute with monitoring
-lucien ai execute-workflow workflow_123456
-# Adapts based on performance and failures
+# Conditional execution
+lucien> echo "success" || echo "backup"
+success
+
+# Command sequence
+lucien> echo "first" ; echo "second"
+first
+second
 ```
 
-### System Administration
+### Quoted Operators
 ```bash
-# PowerShell compatibility
-lucien ps powershell-mode
-PS> Get-Process | Where-Object {$_.CPU -gt 10}
-# Auto-translates to appropriate system commands
-
-# Intelligent system analysis
-lucien cast agent manage "diagnose system performance"
+lucien> echo "operators && inside quotes"
+operators && inside quotes
 ```
 
----
+### Security Modes
+```bash
+# Check current security mode
+lucien> :secure
+Security mode: permissive
 
-## 🔧 Configuration
-
-Lucien uses `~/.lucien/config.yaml`:
-
-```yaml
-shell:
-  prompt: "lucien> "
-  history_size: 1000
-  auto_predict: true
-
-ai:
-  enable_copilot: true
-  prediction_threshold: 0.8
-  claude_api_key: "your-key-here"
-
-agents:
-  bmad_enabled: true
-  timeout: 30
-
-ui:
-  theme: "mystical"
-  colors:
-    primary: "blue"
-    success: "green"
+# Switch to strict mode
+lucien> :secure strict
+Security mode set to strict
 ```
 
----
+### Variables and Aliases
+```bash
+# Set and use variables
+lucien> set TESTVAR=hello
+lucien> echo $TESTVAR
+hello
 
-## 📈 Performance
+# Create and use aliases
+lucien> alias ll='echo long listing'
+lucien> ll
+long listing
+```
 
-- **Command execution**: <100ms average
-- **AI prediction**: <200ms average  
-- **Real-time analysis**: Background processing
-- **Memory usage**: ~50MB base + 10MB per agent
-- **Startup time**: <500ms cold start
+### Batch Processing
+```bash
+# Process commands from file
+cat commands.txt | lucien --batch
 
----
+# Single command execution
+echo "pwd" | lucien --batch
+```
 
-## 🛡 Security
+## 📚 Key Commands
 
-- **Sandboxed agent execution**
-- **Command validation and sanitization**
-- **Secure configuration management**
-- **Memory encryption** (planned)
-- **Audit logging** for all operations
+| Command | Description |
+|---------|-------------|
+| `pwd` | Show current directory |
+| `home` | Navigate to home directory |
+| `clear` | Clear screen |
+| `history` | Show command history |
+| `jobs` | Show background jobs |
+| `env` | List environment variables |
+| `export VAR=value` | Set environment variable |
+| `alias name='command'` | Create command alias |
+| `:secure [strict\|permissive]` | Toggle security mode |
 
----
+## ⚙️ Configuration
 
-## 📚 Documentation
+Lucien stores configuration and data in:
 
-- **[Complete Documentation](DOCUMENTATION.md)** - Comprehensive guide
-- **[API Reference](docs/api.md)** - Developer documentation
-- **[Agent Development](docs/agents.md)** - Creating custom agents
-- **[Configuration Guide](docs/config.md)** - Advanced configuration
+- **Linux/macOS**: `~/.lucien/`
+- **Windows**: `%USERPROFILE%\.lucien\`
 
----
+Files:
+- `history` - Command history
+- `config.toml` - Configuration settings (future)
+- `aliases` - User-defined aliases (future)
 
-## 🏆 Why Lucien CLI?
+## 🧪 Testing
 
-### Traditional Shells
-- Static command execution
-- No learning or adaptation
-- Manual workflow management
-- Limited error assistance
+Run the test suite:
+```bash
+go test ./...
 
-### Lucien CLI
-- **Learns and adapts** to your patterns
-- **Predicts and suggests** next actions
-- **Automates complex workflows**
-- **Provides intelligent assistance**
-- **Enhances productivity** exponentially
+# With coverage
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
 
----
+Run integration tests:
+```bash
+go test ./tests/...
+```
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Development Setup
-```bash
-git clone https://github.com/your-username/lucien-cli.git
-cd lucien-cli
-pip install -r requirements.txt
-python -m cli.main validate system
-```
+Quick start for contributors:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass (`go test ./...`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
----
+## 📖 Documentation
 
-## 🎉 Community
+- [User Manual](docs/USER_MANUAL.md) - Complete command reference
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
+- [Changelog](CHANGELOG.md) - Version history
 
-- **GitHub Discussions** - General questions and ideas
-- **Issues** - Bug reports and feature requests
-- **Wiki** - Community documentation and examples
+## 🛡️ Security
 
----
+Lucien CLI takes security seriously. If you discover a security vulnerability, please send an email to security@arcsyn.dev rather than opening a public issue.
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🌟 Community
+
+- 🐛 [Report bugs](https://github.com/ArcSyn/LUCIEN_GO/issues/new?template=bug_report.md)
+- 💡 [Request features](https://github.com/ArcSyn/LUCIEN_GO/issues/new?template=feature_request.md)
+- 💬 [Discussions](https://github.com/ArcSyn/LUCIEN_GO/discussions)
+- 📧 [Email](mailto:hello@arcsyn.dev)
 
 ---
 
-## 🚀 Roadmap
-
-- [ ] **Cloud sync** for configuration and memory
-- [ ] **Team collaboration** features  
-- [ ] **Plugin marketplace**
-- [ ] **Voice commands** integration
-- [ ] **IDE integration** (VS Code, etc.)
-- [ ] **Mobile companion** app
-
----
-
-**Lucien CLI - The Future of Command Line Interfaces**
-
-*Built with ❤️ for developers who want their tools to be as intelligent as they are.*
+*Built with ⚡ by the ArcSyn team*

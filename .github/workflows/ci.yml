@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: [1.21.x, 1.22.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Run tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22.x'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.22.x
+
+    - name: Build for Linux
+      run: |
+        GOOS=linux GOARCH=amd64 go build -trimpath -mod=readonly -ldflags "-s -w -X main.version=dev -X main.commit=${{ github.sha }} -X main.buildTime=$(date -u '+%Y%m%d_%H%M%S')" -o build/lucien-linux-amd64 ./cmd/lucien
+
+    - name: Build for Windows
+      run: |
+        GOOS=windows GOARCH=amd64 go build -trimpath -mod=readonly -ldflags "-s -w -X main.version=dev -X main.commit=${{ github.sha }} -X main.buildTime=$(date -u '+%Y%m%d_%H%M%S')" -o build/lucien-windows-amd64.exe ./cmd/lucien
+
+    - name: Build for macOS
+      run: |
+        GOOS=darwin GOARCH=amd64 go build -trimpath -mod=readonly -ldflags "-s -w -X main.version=dev -X main.commit=${{ github.sha }} -X main.buildTime=$(date -u '+%Y%m%d_%H%M%S')" -o build/lucien-darwin-amd64 ./cmd/lucien
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: lucien-binaries
+        path: build/
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.22.x
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Gosec Security Scanner
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: './...'

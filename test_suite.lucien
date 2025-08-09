@@ -1,0 +1,144 @@
+#!/usr/bin/env lucien
+# Comprehensive Test Suite for Lucien CLI
+# This script tests all features and should be run via: echo 'source test_suite.lucien' | ./build/lucien
+
+echo "=== LUCIEN CLI COMPREHENSIVE TEST SUITE ==="
+echo ""
+
+# 1. BUILT-IN COMMANDS
+echo "1. Testing Built-in Commands:"
+echo "1.1 pwd:"
+pwd
+
+echo "1.2 echo:"
+echo hello world
+
+echo "1.3 env (first 5 entries):"
+env | head -5 || echo "env command completed"
+
+echo "1.4 clear (will show ANSI codes):"
+clear
+
+echo "1.5 help:"
+help | head -10
+
+echo "1.6 home:"
+home
+
+echo ""
+
+# 2. SECURITY TOGGLE
+echo "2. Testing Security Toggle:"
+echo "2.1 Current security mode:"
+:secure
+
+echo "2.2 Switch to strict mode:"
+:secure strict
+
+echo "2.3 Switch to permissive mode:"
+:secure permissive
+
+echo ""
+
+# 3. OPERATOR CHAINING
+echo "3. Testing Operator Chaining:"
+echo "3.1 AND operator (&&):"
+echo success && echo continued
+
+echo "3.2 OR operator (||):"
+echo first || echo should_not_run
+
+echo "3.3 Sequence operator (;):"
+echo first ; echo second
+
+echo "3.4 Complex chain:"
+echo step1 && echo step2 || echo backup ; echo final
+
+echo ""
+
+# 4. QUOTED OPERATOR LITERALS
+echo "4. Testing Quoted Operators (should be literal):"
+echo "4.1 Double quotes:"
+echo "command && operator"
+
+echo "4.2 Single quotes:"
+echo 'command || operator'
+
+echo ""
+
+# 5. VARIABLE EXPANSION
+echo "5. Testing Variable Expansion:"
+echo "5.1 Set variable:"
+set TESTVAR=hello
+
+echo "5.2 Unix style expansion:"
+echo $TESTVAR
+
+echo "5.3 Brace expansion:"
+echo ${TESTVAR}
+
+echo "5.4 Export variable:"
+export EXPORTED_VAR=world
+
+echo ""
+
+# 6. HISTORY EXPANSION  
+echo "6. Testing History:"
+echo "6.1 Show history:"
+history | tail -5
+
+echo ""
+
+# 7. ALIASES
+echo "7. Testing Aliases:"
+echo "7.1 Create alias:"
+alias ll='echo long listing'
+
+echo "7.2 Use alias:"
+ll
+
+echo "7.3 List aliases:"
+alias
+
+echo "7.4 Remove alias:"
+unalias ll
+
+echo ""
+
+# 8. TILDE EXPANSION
+echo "8. Testing Tilde Expansion:"
+echo "8.1 Current directory before:"
+pwd
+
+echo "8.2 Go home with tilde:"
+cd ~
+
+echo "8.3 Current directory after:"
+pwd
+
+echo ""
+
+# 9. JOBS (basic test - background jobs are limited in test environment)
+echo "9. Testing Job Control:"
+echo "9.1 List jobs:"
+jobs
+
+echo ""
+
+# 10. ERROR HANDLING
+echo "10. Testing Error Handling:"
+echo "10.1 Invalid command:"
+invalidcommand123
+
+echo "10.2 Command with invalid syntax (in strict mode):"
+:secure strict
+echo "Should block in strict mode" && nonexistentcmd
+
+echo "10.3 Switch back to permissive:"
+:secure permissive
+
+echo ""
+
+echo "=== TEST SUITE COMPLETE ==="
+echo "If you can see this message, basic functionality is working."
+echo "Check above output for any errors or unexpected behavior."

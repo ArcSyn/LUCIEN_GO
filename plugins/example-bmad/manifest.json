@@ -1,0 +1,20 @@
+{
+  "name": "bmad",
+  "version": "1.0.0",
+  "description": "Build, Manage, Analyze, Deploy methodology plugin with neural interface",
+  "author": "Lucien Neural Systems",
+  "executable": "bmad.exe",
+  "capabilities": [
+    "build",
+    "manage", 
+    "analyze",
+    "deploy",
+    "workflow"
+  ],
+  "config": {
+    "methodology": "BMAD",
+    "interface": "neural",
+    "aesthetic": "cyberpunk"
+  },
+  "dependencies": []
+}

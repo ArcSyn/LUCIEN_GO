@@ -1,7 +1,110 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/lucien
+/lucien.exe
+
+# Test binaries
+*.test
+
+# Coverage files
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Build directories
+/build/
+/dist/
+
+# Python (for plugins)
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.ENV/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Lucien CLI specific
+.lucien/
 *.log
 logs/
+temp/
+tmp/
+history
+.history
+
+# Configuration
+config.local.yaml
+config.toml
+!config.example.toml
+.env.local
+.env
+
+# Cache
 .cache/
-*.swp
+*.cache
+
+# Plugin development
+/plugins/*/build/
+/plugins/*/*.so
+/plugins/*/*.dll
+/plugins/*/*.dylib
+
+# Documentation
+/docs/dist/
+/docs/node_modules/
+
+# Development artifacts
+*.prof
+*.pprof
+
+# Archives
+*.zip
+*.tar.gz
+*.tgz
