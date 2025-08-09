@@ -16,61 +16,65 @@ import (
 // Built-in command implementations
 
 func (s *Shell) changeDirectory(args []string) (*ExecutionResult, error) {
-	var targetDir string
+	var dir string
+	var err error
 	
 	if len(args) == 0 {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return &ExecutionResult{
-				Error:    fmt.Sprintf("Failed to get home directory: %v", err),
+				Error:    fmt.Sprintf("cd: %v", err),
 				ExitCode: 1,
-			}, err
+			}, nil
 		}
-		targetDir = homeDir
+		dir = homeDir
 	} else {
-		targetDir = args[0]
+		// Use FirstArgAsPath to properly handle quoted paths
+		dir, err = FirstArgAsPath(args)
+		if err != nil {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("cd: %v", err),
+				ExitCode: 1,
+			}, nil
+		}
 	}
 	
 	// Handle special directory shortcuts
-	switch targetDir {
-	case "~":
-		homeDir, _ := os.UserHomeDir()
-		targetDir = homeDir
-	case "-":
-		// TODO: Implement previous directory tracking
-		return &ExecutionResult{
-			Error:    "Previous directory tracking not implemented",
-			ExitCode: 1,
-		}, fmt.Errorf("previous directory tracking not implemented")
+	if dir == "~" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("cd: %v", err),
+				ExitCode: 1,
+			}, nil
+		}
+		dir = homeDir
+	} else if strings.HasPrefix(dir, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("cd: %v", err),
+				ExitCode: 1,
+			}, nil
+		}
+		dir = filepath.Join(homeDir, dir[2:])
 	}
 	
-	// Convert to absolute path
-	absPath, err := filepath.Abs(targetDir)
-	if err != nil {
+	// Clean the path (handles .., ., removes duplicate slashes, etc.)
+	dir = filepath.Clean(dir)
+	
+	// Change directory using os.Chdir
+	if err := os.Chdir(dir); err != nil {
 		return &ExecutionResult{
-			Error:    fmt.Sprintf("Invalid path: %v", err),
+			Error:    fmt.Sprintf("cd: %v", err),
 			ExitCode: 1,
-		}, err
+		}, nil
 	}
 	
-	// Check if directory exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return &ExecutionResult{
-			Error:    fmt.Sprintf("Directory does not exist: %s", absPath),
-			ExitCode: 1,
-		}, err
+	// Update shell current directory to match the actual cwd
+	if newDir, err := os.Getwd(); err == nil {
+		s.currentDir = newDir
 	}
-	
-	// Change directory
-	if err := os.Chdir(absPath); err != nil {
-		return &ExecutionResult{
-			Error:    fmt.Sprintf("Failed to change directory: %v", err),
-			ExitCode: 1,
-		}, err
-	}
-	
-	// Update shell current directory
-	s.currentDir = absPath
 	
 	return &ExecutionResult{
 		Output:   "",

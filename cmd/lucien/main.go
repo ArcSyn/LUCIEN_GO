@@ -28,7 +28,14 @@ var (
 	port        = flag.String("port", "2222", "SSH server port")
 	versionFlag = flag.Bool("version", false, "Show version information")
 	batchFlag   = flag.Bool("batch", false, "Run in batch mode (non-interactive)")
-	version     = "1.0.0-production"
+	
+	// Special Visual Bliss behaviors
+	awakenFlag   = flag.Bool("awaken", false, "Animated boot with sound + 'brain loading' bar")
+	prophecyFlag = flag.Bool("prophecy", false, "Procedural poetic oracle")
+	listenFlag   = flag.Bool("listen", false, "Ambient generative music")
+	vanishFlag   = flag.Bool("vanish", false, "Stylish shutdown with fade")
+	
+	version     = "1.0.0-nexus7"
 	commit      = "unknown"
 	buildTime   = "unknown"
 )
@@ -54,6 +61,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle special behavior flags
+	if *awakenFlag || *prophecyFlag || *listenFlag || *vanishFlag {
+		runSpecialBehavior()
+		return
+	}
+
 	// Check batch mode flag or piped input
 	if *batchFlag {
 		runBatch()
@@ -70,6 +83,45 @@ func main() {
 
 	// Run in interactive mode
 	runInteractive()
+}
+
+func runSpecialBehavior() {
+	// Initialize minimal core systems for special behaviors
+	core, err := initCore()
+	if err != nil {
+		log.Fatalf("❌ Core initialization failed: %v", err)
+	}
+
+	// Create the Enhanced Visual Bliss UI model
+	model := ui.NewEnhancedModel(core.Shell, core.AI)
+
+	// Determine which special behavior to activate
+	var behavior ui.SpecialBehavior
+	if *awakenFlag {
+		behavior = ui.AwakenMode
+	} else if *prophecyFlag {
+		behavior = ui.ProphecyMode
+	} else if *listenFlag {
+		behavior = ui.ListenMode
+	} else if *vanishFlag {
+		behavior = ui.VanishMode
+	}
+
+	// Activate the special behavior
+	cmd := model.GetSpecialBehaviors().ActivateBehavior(behavior)
+
+	// Create a program that will run the special behavior
+	program := tea.NewProgram(model, tea.WithAltScreen())
+	
+	// Send the special behavior activation command
+	if cmd != nil {
+		program.Send(cmd())
+	}
+
+	// Run the program
+	if _, err := program.Run(); err != nil {
+		log.Fatalf("❌ Special behavior failed: %v", err)
+	}
 }
 
 func runBatch() {
@@ -229,17 +281,13 @@ func startLocal(core *Core) {
 	fmt.Println("🧠 Loading cyberpunk interface...")
 	fmt.Println()
 	
-	// Create the Bubble Tea UI model with cyberpunk aesthetics
-	model := ui.NewModel(core.Shell, core.AI)
+	// Create the Enhanced Visual Bliss UI model 
+	model := ui.NewEnhancedModel(core.Shell, core.AI)
 	
-	// Wire up history provider for intelligent completion
-	if core.History != nil {
-		historyAdapter := ui.NewHistoryAdapter(core.History)
-		model.SetHistoryProvider(historyAdapter)
-	}
+	// Launch the Enhanced Visual Bliss TUI
+	program := tea.NewProgram(model, tea.WithAltScreen())
 	
-	// Launch the TUI
-	if _, err := tea.NewProgram(&model, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := program.Run(); err != nil {
 		log.Fatalf("❌ Neural interface initialization failed: %v", err)
 	}
 	

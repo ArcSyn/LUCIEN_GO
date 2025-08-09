@@ -28,6 +28,7 @@ type ShellConfig struct {
 	Aliases          map[string]string `toml:"aliases"`
 	Environment      map[string]string `toml:"environment"`
 	ExecutionTimeout int               `toml:"execution_timeout"` // in seconds
+	ExecutorMode     string            `toml:"executor_mode"`     // "shell" or "internal"
 }
 
 // UIConfig holds UI-specific configuration
@@ -80,6 +81,7 @@ func DefaultConfig() *Config {
 			Aliases:          make(map[string]string),
 			Environment:      make(map[string]string),
 			ExecutionTimeout: 30,
+			ExecutorMode:     "shell",
 		},
 		UI: UIConfig{
 			AnimatedStartup: true,
@@ -323,6 +325,12 @@ func setShellConfig(config *ShellConfig, field, value string) error {
 			config.ExecutionTimeout = i
 		} else {
 			return fmt.Errorf("invalid integer value: %s", value)
+		}
+	case "executor_mode":
+		if value == "shell" || value == "internal" {
+			config.ExecutorMode = value
+		} else {
+			return fmt.Errorf("invalid executor mode: %s (must be 'shell' or 'internal')", value)
 		}
 	default:
 		return fmt.Errorf("unknown shell config field: %s", field)

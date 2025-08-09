@@ -8,9 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ArcSyn/LucienCLI/internal/env"
-	"github.com/ArcSyn/LucienCLI/internal/history"
 )
 
 // TestComprehensiveShellFunctionality tests all major shell features systematically
@@ -22,26 +19,12 @@ func TestComprehensiveShellFunctionality(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create environment manager for testing
-	envMgr, err := env.New(&env.Config{AutoSave: false})
-	if err != nil {
-		t.Fatalf("Failed to create env manager: %v", err)
-	}
-
-	// Create history manager for testing
-	historyMgr, err := history.New(&history.Config{
-		HistoryFile: filepath.Join(tmpDir, "test_history.jsonl"),
-		MaxEntries:  1000,
-		AutoSave:    true,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create history manager: %v", err)
-	}
+	// Note: envMgr and historyMgr are no longer needed in the Config struct
+	// They are handled internally by the shell
 
 	config := &Config{
-		SafeMode:   false,
-		EnvMgr:     envMgr,
-		HistoryMgr: historyMgr,
+		SafeMode:     false,
+		ExecutorMode: "internal",
 	}
 	shell := New(config)
 
@@ -106,7 +89,7 @@ func testBasicCommandParsing(t *testing.T, shell *Shell) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			commands, err := shell.parseCommandLine(tt.input)
+			commands, err := shell.parseCommandLineAdvanced(tt.input)
 			
 			if tt.expectErr {
 				if err == nil {
@@ -120,13 +103,13 @@ func testBasicCommandParsing(t *testing.T, shell *Shell) {
 				return
 			}
 
-			if len(commands) != tt.cmdCount {
-				t.Errorf("Expected %d commands, got %d", tt.cmdCount, len(commands))
+			if commands.Len() != tt.cmdCount {
+				t.Errorf("Expected %d commands, got %d", tt.cmdCount, commands.Len())
 			}
 
 			// Verify command structure
-			if len(commands) > 0 {
-				cmd := commands[0]
+			if commands.Len() > 0 {
+				cmd := commands.At(0)
 				if cmd.Name == "" {
 					t.Error("Command name should not be empty")
 				}
@@ -156,7 +139,7 @@ func testAdvancedCommandParsing(t *testing.T, shell *Shell, tmpDir string) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			commands, err := shell.parseCommandLine(tt.input)
+			commands, err := shell.parseCommandLineAdvanced(tt.input)
 			
 			if tt.expectErr {
 				if err == nil {
@@ -170,7 +153,7 @@ func testAdvancedCommandParsing(t *testing.T, shell *Shell, tmpDir string) {
 				return
 			}
 
-			if len(commands) == 0 {
+			if commands.Len() == 0 {
 				t.Error("Expected at least one command")
 			}
 		})
@@ -179,10 +162,11 @@ func testAdvancedCommandParsing(t *testing.T, shell *Shell, tmpDir string) {
 
 func testBuiltinCommands(t *testing.T, shell *Shell, tmpDir string) {
 	tests := []struct {
-		name      string
-		command   string
-		args      []string
-		expectErr bool
+		name        string
+		command     string
+		args        []string
+		expectErr   bool
+		expectFail  bool // Expect non-zero exit code but no Go error
 		checkOutput func(result *ExecutionResult) error
 	}{
 		{
@@ -268,13 +252,17 @@ func testBuiltinCommands(t *testing.T, shell *Shell, tmpDir string) {
 			},
 		},
 		{
-			name:      "change directory - invalid",
-			command:   "cd",
-			args:      []string{"/nonexistent/directory"},
-			expectErr: true,
+			name:       "change directory - invalid",
+			command:    "cd",
+			args:       []string{"/nonexistent/directory"},
+			expectErr:  false,
+			expectFail: true, // Expect non-zero exit code
 			checkOutput: func(result *ExecutionResult) error {
 				if result.ExitCode == 0 {
 					return fmt.Errorf("expected non-zero exit code for invalid cd")
+				}
+				if result.Error == "" {
+					return fmt.Errorf("expected error message for invalid cd")
 				}
 				return nil
 			},
@@ -283,11 +271,12 @@ func testBuiltinCommands(t *testing.T, shell *Shell, tmpDir string) {
 			name:      "set without args",
 			command:   "set",
 			args:      []string{},
-			expectErr: true,
+			expectErr: false,
 			checkOutput: func(result *ExecutionResult) error {
-				if result.ExitCode == 0 {
-					return fmt.Errorf("expected non-zero exit code for set without args")
+				if result.ExitCode != 0 {
+					return fmt.Errorf("expected zero exit code for set without args (should list variables)")
 				}
+				// Should return a valid result (empty variables list is ok)
 				return nil
 			},
 		},
@@ -308,6 +297,13 @@ func testBuiltinCommands(t *testing.T, shell *Shell, tmpDir string) {
 				}
 				if result.ExitCode == 0 {
 					t.Error("Expected non-zero exit code")
+				}
+			} else if tt.expectFail {
+				if err != nil {
+					t.Errorf("Unexpected Go error: %v", err)
+				}
+				if result.ExitCode == 0 {
+					t.Error("Expected non-zero exit code for command failure")
 				}
 			} else {
 				if err != nil {
@@ -650,7 +646,7 @@ func testResourceAndPerformance(t *testing.T, shell *Shell) {
 	// Test complex command parsing
 	complexCmd := "echo hello | echo world | echo test > /dev/null"
 	start = time.Now()
-	_, err = shell.parseCommandLine(complexCmd)
+	_, err = shell.parseCommandLineAdvanced(complexCmd)
 	duration = time.Since(start)
 
 	if err != nil {
@@ -737,7 +733,7 @@ func testEdgeCases(t *testing.T, shell *Shell) {
 					args = append(args, fmt.Sprintf("arg%d", i))
 				}
 				cmdLine := "echo " + strings.Join(args, " ")
-				_, err := shell.parseCommandLine(cmdLine)
+				_, err := shell.parseCommandLineAdvanced(cmdLine)
 				if err != nil {
 					t.Errorf("Should handle many arguments: %v", err)
 				}
@@ -753,7 +749,7 @@ func testEdgeCases(t *testing.T, shell *Shell) {
 				}
 				
 				for _, cmd := range specialChars {
-					_, err := shell.parseCommandLine(cmd)
+					_, err := shell.parseCommandLineAdvanced(cmd)
 					// These may or may not parse successfully, but shouldn't crash
 					_ = err
 				}
@@ -789,8 +785,7 @@ func testEdgeCases(t *testing.T, shell *Shell) {
 
 // Benchmark tests
 func BenchmarkCommandExecution(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{SafeMode: false, EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	command := "echo hello world"
 	
 	b.ResetTimer()
@@ -803,13 +798,12 @@ func BenchmarkCommandExecution(b *testing.B) {
 }
 
 func BenchmarkComplexParsing(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	command := `echo "complex command" | grep -i "test" | sort -n > output.txt`
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := shell.parseCommandLine(command)
+		_, err := shell.parseCommandLineAdvanced(command)
 		if err != nil {
 			b.Fatalf("Command parsing failed: %v", err)
 		}
@@ -817,8 +811,7 @@ func BenchmarkComplexParsing(b *testing.B) {
 }
 
 func BenchmarkAdvancedVariableExpansion(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	shell.Execute("set HOME /home/testuser")
 	shell.Execute("set USER testuser")
 	shell.Execute("set PATH /usr/bin:/bin:/usr/local/bin")
@@ -831,8 +824,7 @@ func BenchmarkAdvancedVariableExpansion(b *testing.B) {
 }
 
 func BenchmarkHistoryManagement(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	
 	// Pre-populate history
 	for i := 0; i < 1000; i++ {

@@ -24,6 +24,29 @@ type CommandChain struct {
 	Types     []CommandType
 }
 
+// Len returns the number of commands in the chain
+func (cc *CommandChain) Len() int {
+	if cc == nil {
+		return 0
+	}
+	return len(cc.Commands)
+}
+
+// At returns the command at the specified index
+func (cc *CommandChain) At(i int) Command {
+	return cc.Commands[i]
+}
+
+// Slice returns a copy of the commands slice
+func (cc *CommandChain) Slice() []Command {
+	if cc == nil {
+		return nil
+	}
+	out := make([]Command, len(cc.Commands))
+	copy(out, cc.Commands)
+	return out
+}
+
 // parseCommandLineAdvanced parses a complete command line with all operators
 func (s *Shell) parseCommandLineAdvanced(cmdLine string) (*CommandChain, error) {
 	if strings.TrimSpace(cmdLine) == "" {
@@ -67,17 +90,32 @@ func (s *Shell) splitCommandLineWithTypes(cmdLine string) ([]Command, []string, 
 		
 		// Handle escape sequences
 		if escaped {
-			currentCommand.WriteByte(char)
+			// For Windows paths, preserve backslashes when they're not escaping quotes
+			if char == '"' || char == '\'' {
+				// This is an escaped quote, add it literally
+				currentCommand.WriteByte(char)
+			} else {
+				// This is a backslash followed by another character - preserve both
+				currentCommand.WriteByte('\\')
+				currentCommand.WriteByte(char)
+			}
 			escaped = false
 			i++
 			continue
 		}
 		
 		if char == '\\' {
-			escaped = true
-			currentCommand.WriteByte(char)
-			i++
-			continue
+			// Check if next character is a quote - if so, this is an escape
+			if i+1 < len(cmdLine) && (cmdLine[i+1] == '"' || cmdLine[i+1] == '\'') {
+				escaped = true
+				i++
+				continue
+			} else {
+				// This is a regular backslash (like in Windows paths), keep it
+				currentCommand.WriteByte(char)
+				i++
+				continue
+			}
 		}
 		
 		// Handle quotes - operators inside quotes are literal
@@ -235,9 +273,26 @@ func (s *Shell) parseCommand(cmdStr string) (Command, error) {
 		return Command{}, nil
 	}
 	
+	// Handle alias expansion
+	commandName := tokens[0]
+	args := tokens[1:]
+	
+	if aliasValue, exists := s.aliases[commandName]; exists {
+		// Parse the alias value and prepend to arguments
+		aliasTokens, err := s.tokenizeAdvanced(aliasValue)
+		if err == nil && len(aliasTokens) > 0 {
+			commandName = aliasTokens[0]
+			// Merge alias args with original args
+			newArgs := make([]string, 0, len(aliasTokens)-1+len(args))
+			newArgs = append(newArgs, aliasTokens[1:]...)
+			newArgs = append(newArgs, args...)
+			args = newArgs
+		}
+	}
+	
 	cmd := Command{
-		Name:      tokens[0],
-		Args:      tokens[1:],
+		Name:      commandName,
+		Args:      args,
 		Redirects: make(map[string]string),
 	}
 	
@@ -261,17 +316,29 @@ func (s *Shell) tokenizeAdvanced(input string) ([]string, error) {
 		char := input[i]
 		
 		if escaped {
-			current.WriteByte(char)
+			// For Windows paths, preserve backslashes when they're not escaping quotes
+			if char == '"' || char == '\'' {
+				// This is an escaped quote, add it literally
+				current.WriteByte(char)
+			} else {
+				// This is a backslash followed by another character - preserve both
+				current.WriteByte('\\')
+				current.WriteByte(char)
+			}
 			escaped = false
 			continue
 		}
 		
 		if char == '\\' {
-			escaped = true
-			continue
-		}
-		
-		if char == '"' || char == '\'' {
+			// Check if next character is a quote - if so, this is an escape
+			if i+1 < len(input) && (input[i+1] == '"' || input[i+1] == '\'') {
+				escaped = true
+				continue
+			} else {
+				// This is a regular backslash (like in Windows paths), keep it
+				current.WriteByte(char)
+			}
+		} else if char == '"' || char == '\'' {
 			if !inQuotes {
 				inQuotes = true
 				quoteChar = char
@@ -304,4 +371,27 @@ func (s *Shell) tokenizeAdvanced(input string) ([]string, error) {
 	}
 	
 	return tokens, nil
+}
+
+// FirstArgAsPath extracts the first argument as a path, handling quotes correctly
+func FirstArgAsPath(args []string) (string, error) {
+	if len(args) == 0 {
+		return "", fmt.Errorf("no path argument provided")
+	}
+	
+	path := args[0]
+	
+	// Remove surrounding quotes - only outer quotes, preserving inner ones
+	if len(path) >= 2 {
+		if (path[0] == '"' && path[len(path)-1] == '"') ||
+		   (path[0] == '\'' && path[len(path)-1] == '\'') {
+			path = path[1 : len(path)-1]
+		}
+	}
+	
+	if path == "" {
+		return "", fmt.Errorf("empty path argument")
+	}
+	
+	return path, nil
 }

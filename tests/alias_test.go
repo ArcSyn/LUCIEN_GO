@@ -10,7 +10,8 @@ import (
 // newTestShell creates a shell instance for testing
 func newTestShell() *shell.Shell {
 	config := &shell.Config{
-		SafeMode: false, // Disable security for tests
+		SafeMode:       false, // Disable security for tests
+		DisableHistory: true,  // Use fresh history for tests
 	}
 	return shell.New(config)
 }

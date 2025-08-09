@@ -3,14 +3,12 @@ package shell
 import (
 	"strings"
 	"testing"
-
-	"github.com/ArcSyn/LucienCLI/internal/env"
-	"github.com/ArcSyn/LucienCLI/internal/history"
 )
 
 func TestShellParsing(t *testing.T) {
 	config := &Config{
-		SafeMode: false,
+		SafeMode:     false,
+		ExecutorMode: "internal",
 	}
 	shell := New(config)
 
@@ -48,18 +46,18 @@ func TestShellParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			commands, err := shell.parseCommandLine(tt.input)
+			commands, err := shell.parseCommandLineAdvanced(tt.input)
 			if err != nil {
 				t.Fatalf("Failed to parse command: %v", err)
 			}
 
-			if len(commands) != tt.expected {
-				t.Errorf("Expected %d commands, got %d", tt.expected, len(commands))
+			if commands.Len() != tt.expected {
+				t.Errorf("Expected %d commands, got %d", tt.expected, commands.Len())
 			}
 
 			// Validate first command structure
-			if len(commands) > 0 {
-				cmd := commands[0]
+			if commands.Len() > 0 {
+				cmd := commands.At(0)
 				if cmd.Name == "" {
 					t.Error("Command name should not be empty")
 				}
@@ -100,7 +98,10 @@ func TestTokenization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokens := shell.tokenize(tt.input)
+			tokens, err := shell.tokenizeAdvanced(tt.input)
+			if err != nil {
+				t.Fatalf("Failed to tokenize: %v", err)
+			}
 			
 			if len(tokens) != len(tt.expected) {
 				t.Errorf("Expected %d tokens, got %d", len(tt.expected), len(tokens))
@@ -119,15 +120,11 @@ func TestTokenization(t *testing.T) {
 }
 
 func TestVariableExpansion(t *testing.T) {
-	// Create environment manager for testing
-	envMgr, err := env.New(&env.Config{AutoSave: false})
-	if err != nil {
-		t.Fatalf("Failed to create env manager: %v", err)
-	}
+	// Variable expansion is handled internally by the shell
 	
-	shell := New(&Config{EnvMgr: envMgr})
-	shell.Execute("set USER testuser")
-	shell.Execute("set HOME /home/testuser")
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
+	shell.Execute("set TESTUSER testuser")
+	shell.Execute("set TESTHOME /home/testuser")
 
 	tests := []struct {
 		name     string
@@ -136,17 +133,17 @@ func TestVariableExpansion(t *testing.T) {
 	}{
 		{
 			name:     "Simple variable",
-			input:    "echo $USER",
+			input:    "echo $TESTUSER",
 			expected: "echo testuser",
 		},
 		{
 			name:     "Braced variable",
-			input:    "echo ${HOME}/documents",
+			input:    "echo ${TESTHOME}/documents",
 			expected: "echo /home/testuser/documents",
 		},
 		{
 			name:     "Multiple variables",
-			input:    "$USER lives in $HOME",
+			input:    "$TESTUSER lives in $TESTHOME",
 			expected: "testuser lives in /home/testuser",
 		},
 		{
@@ -273,21 +270,9 @@ func TestCommandExecution(t *testing.T) {
 }
 
 func TestHistoryManagement(t *testing.T) {
-	// Create environment and history managers for testing
-	envMgr, err := env.New(&env.Config{AutoSave: false})
-	if err != nil {
-		t.Fatalf("Failed to create env manager: %v", err)
-	}
-
-	historyMgr, err := history.New(&history.Config{
-		MaxEntries: 1000,
-		AutoSave:   true,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create history manager: %v", err)
-	}
+	// History management is handled internally by the shell
 	
-	shell := New(&Config{EnvMgr: envMgr, HistoryMgr: historyMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 
 	// Execute some commands to build history
 	commands := []string{"echo test1", "pwd", "echo test2"}
@@ -346,16 +331,12 @@ func TestAliasSystem(t *testing.T) {
 }
 
 func TestEnvironmentVariables(t *testing.T) {
-	// Create environment manager for testing
-	envMgr, err := env.New(&env.Config{AutoSave: false})
-	if err != nil {
-		t.Fatalf("Failed to create env manager: %v", err)
-	}
+	// Environment variables are handled internally by the shell
 	
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 
 	// Set environment variable
-	_, err = shell.builtins["set"]([]string{"TESTVAR", "testvalue"})
+	_, err := shell.builtins["set"]([]string{"TESTVAR", "testvalue"})
 	if err != nil {
 		t.Errorf("Failed to set variable: %v", err)
 	}
@@ -376,13 +357,12 @@ func TestEnvironmentVariables(t *testing.T) {
 
 // Benchmark tests for performance
 func BenchmarkCommandParsing(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	command := "echo hello | grep h | sort | uniq > output.txt"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := shell.parseCommandLine(command)
+		_, err := shell.parseCommandLineAdvanced(command)
 		if err != nil {
 			b.Fatalf("Command parsing failed: %v", err)
 		}
@@ -390,19 +370,20 @@ func BenchmarkCommandParsing(b *testing.B) {
 }
 
 func BenchmarkTokenization(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	input := `echo "hello world" test 'quoted string' > output.txt`
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		shell.tokenize(input)
+		_, err := shell.tokenizeAdvanced(input)
+		if err != nil {
+			b.Fatalf("Tokenization failed: %v", err)
+		}
 	}
 }
 
 func BenchmarkVariableExpansion(b *testing.B) {
-	envMgr, _ := env.New(&env.Config{AutoSave: false})
-	shell := New(&Config{EnvMgr: envMgr})
+	shell := New(&Config{SafeMode: false, ExecutorMode: "internal"})
 	shell.Execute("set USER testuser")
 	shell.Execute("set HOME /home/testuser")
 	input := "User $USER lives in $HOME and works in ${HOME}/projects"

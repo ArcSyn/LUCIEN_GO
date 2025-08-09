@@ -109,6 +109,9 @@ func NewModel(shell *shell.Shell, aiEngine *ai.Engine) Model {
 	// Initialize completion engine with shell data
 	model.updateCompletionData()
 
+	// Set up shell message dispatcher
+	model.shell.SetDispatcher(nil)
+
 	return model
 }
 
@@ -170,6 +173,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case glitchMsg:
 		if m.glitchEffect {
 			return m, m.glitchTick()
+		}
+		
+	case shell.ProcessStartedMsg:
+		// Handle process started message
+		m.addOutput(m.currentTheme.InfoStyle.Render(fmt.Sprintf("🚀 Process started: %s", msg.Cmd)))
+		
+	case shell.ProcessStdoutMsg:
+		// Handle stdout message - display immediately
+		if msg.Line != "" {
+			m.addOutput(msg.Line)
+		}
+		
+	case shell.ProcessStderrMsg:
+		// Handle stderr message - display as error
+		if msg.Line != "" {
+			m.addOutput(m.currentTheme.ErrorStyle.Render("ERROR: " + msg.Line))
+		}
+		
+	case shell.ProcessExitedMsg:
+		// Handle process exited message
+		if msg.Code == 0 {
+			m.addOutput(m.currentTheme.SuccessStyle.Render(fmt.Sprintf("✓ Process completed (exit code: %d)", msg.Code)))
+		} else {
+			m.addOutput(m.currentTheme.ErrorStyle.Render(fmt.Sprintf("✗ Process failed (exit code: %d)", msg.Code)))
 		}
 	}
 
@@ -386,6 +413,12 @@ func (m *Model) handleSpecialCommand(command string) *Model {
 	}
 
 	return m
+}
+
+// addOutput adds a line to the output buffer and updates the viewport
+func (m *Model) addOutput(line string) {
+	m.output = append(m.output, line)
+	m.updateViewport()
 }
 
 func (m *Model) showHelp() {

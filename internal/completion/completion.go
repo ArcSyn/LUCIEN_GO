@@ -115,8 +115,20 @@ func (e *Engine) UpdateVariables(variables map[string]string) {
 
 // Complete performs intelligent tab completion
 func (e *Engine) Complete(input string, cursorPos int) []Suggestion {
+	// Ensure cursor position is valid
 	if cursorPos < 0 || cursorPos > len(input) {
 		cursorPos = len(input)
+	}
+	
+	// Handle empty or whitespace-only input
+	trimmedInput := strings.TrimSpace(input)
+	if trimmedInput == "" {
+		// Return limited command suggestions for empty input
+		suggestions := e.getCommandSuggestions("")
+		if len(suggestions) > 20 {
+			return suggestions[:20] // Limit suggestions for performance
+		}
+		return suggestions
 	}
 	
 	// Extract the part of the command we're completing
@@ -124,10 +136,23 @@ func (e *Engine) Complete(input string, cursorPos int) []Suggestion {
 	tokens := e.tokenize(beforeCursor)
 	
 	if len(tokens) == 0 {
-		return e.getCommandSuggestions("")
+		suggestions := e.getCommandSuggestions("")
+		if len(suggestions) > 20 {
+			return suggestions[:20]
+		}
+		return suggestions
 	}
 	
 	lastToken := tokens[len(tokens)-1]
+	
+	// Special case: if the input looks like a file path (starts with ./, ../, /, or ~), 
+	// treat it as file completion even if it's the first token
+	if len(tokens) == 1 && (strings.HasPrefix(lastToken, "./") || 
+		strings.HasPrefix(lastToken, "../") || 
+		strings.HasPrefix(lastToken, "/") ||
+		strings.HasPrefix(lastToken, "~")) {
+		return e.getFileSuggestions(lastToken)
+	}
 	
 	// If we're completing the first token, it's a command
 	if len(tokens) == 1 && !strings.HasSuffix(beforeCursor, " ") {
@@ -204,7 +229,7 @@ func (e *Engine) tokenize(input string) []string {
 
 // getCommandSuggestions returns command completion suggestions
 func (e *Engine) getCommandSuggestions(prefix string) []Suggestion {
-	var suggestions []Suggestion
+	suggestions := make([]Suggestion, 0)
 	
 	// Built-in commands (highest priority)
 	for builtin := range e.builtins {
@@ -281,13 +306,17 @@ func (e *Engine) getCommandSuggestions(prefix string) []Suggestion {
 
 // getFileSuggestions returns file completion suggestions
 func (e *Engine) getFileSuggestions(prefix string) []Suggestion {
-	var suggestions []Suggestion
+	suggestions := make([]Suggestion, 0)
 	
 	// Determine the directory to search
 	dir := "."
 	pattern := prefix
 	
-	if strings.Contains(prefix, "/") || strings.Contains(prefix, "\\") {
+	// Handle "./" prefix specifically
+	if strings.HasPrefix(prefix, "./") {
+		dir = "."
+		pattern = strings.TrimPrefix(prefix, "./")
+	} else if strings.Contains(prefix, "/") || strings.Contains(prefix, "\\") {
 		dir = filepath.Dir(prefix)
 		pattern = filepath.Base(prefix)
 		
@@ -308,13 +337,13 @@ func (e *Engine) getFileSuggestions(prefix string) []Suggestion {
 	for _, entry := range entries {
 		name := entry.Name()
 		
-		// Skip hidden files unless pattern starts with dot
-		if strings.HasPrefix(name, ".") && !strings.HasPrefix(pattern, ".") {
+		// Skip hidden files unless pattern starts with dot or we're in ./ mode
+		if strings.HasPrefix(name, ".") && !strings.HasPrefix(pattern, ".") && !strings.HasPrefix(prefix, "./") {
 			continue
 		}
 		
 		// Check if name matches pattern
-		if strings.HasPrefix(name, pattern) {
+		if pattern == "" || strings.HasPrefix(name, pattern) {
 			suggestionType := FileCompletion
 			description := "file"
 			priority := 60
@@ -328,10 +357,14 @@ func (e *Engine) getFileSuggestions(prefix string) []Suggestion {
 			
 			// Reconstruct full path if needed
 			fullPath := name
-			if dir != "." {
+			if strings.HasPrefix(prefix, "./") {
+				fullPath = "./" + name
+			} else if dir != "." {
 				fullPath = filepath.Join(dir, name)
 				if strings.HasPrefix(prefix, "~/") {
-					fullPath = "~/" + strings.TrimPrefix(fullPath, filepath.Join(os.Getenv("HOME"), "/"))
+					if homeDir := os.Getenv("HOME"); homeDir != "" {
+						fullPath = "~/" + strings.TrimPrefix(fullPath, homeDir+"/")
+					}
 				}
 			}
 			
@@ -360,7 +393,7 @@ func (e *Engine) getDirectorySuggestions(prefix string) []Suggestion {
 	suggestions := e.getFileSuggestions(prefix)
 	
 	// Filter to only include directories
-	var dirSuggestions []Suggestion
+	dirSuggestions := make([]Suggestion, 0)
 	for _, suggestion := range suggestions {
 		if suggestion.Type == DirectoryCompletion {
 			dirSuggestions = append(dirSuggestions, suggestion)
@@ -372,7 +405,7 @@ func (e *Engine) getDirectorySuggestions(prefix string) []Suggestion {
 
 // getVariableSuggestions returns environment variable suggestions
 func (e *Engine) getVariableSuggestions(prefix string) []Suggestion {
-	var suggestions []Suggestion
+	suggestions := make([]Suggestion, 0)
 	
 	for varName := range e.variables {
 		if strings.HasPrefix(varName, prefix) {
@@ -394,7 +427,7 @@ func (e *Engine) getVariableSuggestions(prefix string) []Suggestion {
 
 // getHistoryCommandSuggestions returns suggestions for history command arguments
 func (e *Engine) getHistoryCommandSuggestions(prefix string) []Suggestion {
-	var suggestions []Suggestion
+	suggestions := make([]Suggestion, 0)
 	
 	historyCommands := []string{"clear", "stats", "search"}
 	for _, cmd := range historyCommands {
@@ -413,7 +446,7 @@ func (e *Engine) getHistoryCommandSuggestions(prefix string) []Suggestion {
 
 // getPathExecutables searches PATH for executable files
 func (e *Engine) getPathExecutables(prefix string) []Suggestion {
-	var suggestions []Suggestion
+	suggestions := make([]Suggestion, 0)
 	
 	pathEnv := os.Getenv("PATH")
 	if pathEnv == "" {

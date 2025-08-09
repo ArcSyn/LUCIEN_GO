@@ -1,12 +1,18 @@
 package shell
 
 import (
+	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -20,7 +26,9 @@ type ExecutionResult struct {
 
 // Config holds shell configuration
 type Config struct {
-	SafeMode bool
+	SafeMode       bool
+	ExecutorMode   string // "shell" or "internal"
+	DisableHistory bool   // Skip loading history file (for tests)
 }
 
 // Command represents a parsed command with its arguments and redirections
@@ -44,6 +52,7 @@ type Shell struct {
 	variables     map[string]string
 	historyFile   string
 	securityGuard *SecurityGuard
+	dispatcher    MessageDispatcher // For Bubble Tea integration
 }
 
 // Job represents a background job
@@ -57,7 +66,15 @@ type Job struct {
 // New creates a new shell instance
 func New(config *Config) *Shell {
 	if config == nil {
-		config = &Config{SafeMode: false}
+		config = &Config{
+			SafeMode:     false,
+			ExecutorMode: "shell",
+		}
+	}
+	
+	// Default executor mode if not set
+	if config.ExecutorMode == "" {
+		config.ExecutorMode = "shell"
 	}
 
 	s := &Shell{
@@ -72,12 +89,19 @@ func New(config *Config) *Shell {
 	}
 
 	s.historyFile = s.getHistoryFile()
-	s.loadHistory()
+	if !config.DisableHistory {
+		s.loadHistory()
+	}
 
 	s.initBuiltins()
 	s.initEnvironment()
 	
 	return s
+}
+
+// SetDispatcher sets the message dispatcher for Bubble Tea integration
+func (s *Shell) SetDispatcher(dispatcher MessageDispatcher) {
+	s.dispatcher = dispatcher
 }
 
 // getHistoryFile returns the path to the history file
@@ -145,7 +169,7 @@ func (s *Shell) Execute(commandLine string) (*ExecutionResult, error) {
 			Error:    err.Error(),
 			ExitCode: 1,
 			Duration: time.Since(start),
-		}, err
+		}, nil  // Return nil error - expansion failure is handled in ExecutionResult
 	}
 	
 	// Parse command line with advanced parser (includes security validation)
@@ -180,19 +204,17 @@ func (s *Shell) expandVariables(input string) string {
 		}
 	}
 	
-	// Expand $VAR and ${VAR} (Unix style)
 	result := input
 	
-	// Simple variable expansion for testing
-	for varName, varValue := range s.variables {
-		result = strings.ReplaceAll(result, "$"+varName, varValue)
-		result = strings.ReplaceAll(result, "${"+varName+"}", varValue)
-		
-		// Windows style %VAR%
-		result = strings.ReplaceAll(result, "%"+varName+"%", varValue)
+	// Create a combined variable map (shell variables + environment)
+	allVars := make(map[string]string)
+	
+	// Add shell variables
+	for k, v := range s.variables {
+		allVars[k] = v
 	}
 	
-	// Expand common environment variables
+	// Add common environment variables
 	envVars := map[string]string{
 		"HOME":        os.Getenv("HOME"),
 		"USER":        os.Getenv("USER"),
@@ -202,13 +224,41 @@ func (s *Shell) expandVariables(input string) string {
 		"PWD":         s.currentDir,
 	}
 	
-	for varName, varValue := range envVars {
-		if varValue != "" {
-			result = strings.ReplaceAll(result, "$"+varName, varValue)
-			result = strings.ReplaceAll(result, "${"+varName+"}", varValue)
-			result = strings.ReplaceAll(result, "%"+varName+"%", varValue)
+	for k, v := range envVars {
+		if v != "" {
+			allVars[k] = v
 		}
 	}
+	
+	// Expand ${VAR} format first (more specific)
+	braceRegex := regexp.MustCompile(`\${([A-Za-z_][A-Za-z0-9_]*)}`)
+	result = braceRegex.ReplaceAllStringFunc(result, func(match string) string {
+		varName := match[2 : len(match)-1] // Remove ${ and }
+		if value, exists := allVars[varName]; exists {
+			return value
+		}
+		return ""
+	})
+	
+	// Expand $VAR format (word boundary aware)
+	dollarRegex := regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+	result = dollarRegex.ReplaceAllStringFunc(result, func(match string) string {
+		varName := match[1:] // Remove $
+		if value, exists := allVars[varName]; exists {
+			return value
+		}
+		return ""
+	})
+	
+	// Windows style %VAR%
+	percentRegex := regexp.MustCompile(`%([A-Za-z_][A-Za-z0-9_]*)%`)
+	result = percentRegex.ReplaceAllStringFunc(result, func(match string) string {
+		varName := match[1 : len(match)-1] // Remove % and %
+		if value, exists := allVars[varName]; exists {
+			return value
+		}
+		return ""
+	})
 	
 	return result
 }
@@ -225,7 +275,7 @@ func getCurrentDir() string {
 // initBuiltins initializes built-in commands
 func (s *Shell) initBuiltins() {
 	s.builtins = map[string]func([]string) (*ExecutionResult, error){
-		"cd":      s.builtinCd,
+		"cd":      s.changeDirectory,
 		"pwd":     s.builtinPwd,
 		"echo":    s.builtinEcho,
 		"set":     s.builtinSet,
@@ -237,6 +287,8 @@ func (s *Shell) initBuiltins() {
 		"jobs":    s.builtinJobs,
 		"fg":      s.builtinFg,
 		"bg":      s.builtinBg,
+		"disown":  s.builtinDisown,
+		"suspend": s.builtinSuspend,
 		"kill":    s.builtinKill,
 		"exit":    s.builtinExit,
 		"help":    s.builtinHelp,
@@ -404,8 +456,12 @@ func (s *Shell) executeSingleCommand(cmd Command) (*ExecutionResult, error) {
 		return builtin(cmd.Args)
 	}
 	
-	// Execute external command
-	return s.executeExternalPlatform(&cmd)
+	// Execute external command based on executor mode
+	if s.config.ExecutorMode == "shell" {
+		return s.executeExternalViaShell(&cmd)
+	} else {
+		return s.executeExternalPlatform(&cmd)
+	}
 }
 
 // parseJobID parses job reference like %1, %+, %-
@@ -573,7 +629,16 @@ func (s *Shell) builtinSet(args []string) (*ExecutionResult, error) {
 		}, nil
 	}
 	
-	// Set variable
+	// Handle traditional "set VAR value" format
+	if len(args) == 2 && !strings.Contains(args[0], "=") {
+		s.variables[args[0]] = args[1]
+		return &ExecutionResult{
+			Output:   fmt.Sprintf("%s=%s\n", args[0], args[1]),
+			ExitCode: 0,
+		}, nil
+	}
+	
+	// Handle VAR=value format
 	for _, arg := range args {
 		if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
@@ -609,7 +674,34 @@ func (s *Shell) builtinAlias(args []string) (*ExecutionResult, error) {
 		}, nil
 	}
 	
-	// Set alias
+	// Handle "alias name value" format
+	if len(args) == 2 && !strings.Contains(args[0], "=") {
+		name := args[0]
+		value := args[1]
+		s.aliases[name] = value
+		return &ExecutionResult{
+			Output:   fmt.Sprintf("alias %s='%s'\n", name, value),
+			ExitCode: 0,
+		}, nil
+	}
+	
+	// Handle single argument (show alias or error)
+	if len(args) == 1 && !strings.Contains(args[0], "=") {
+		name := args[0]
+		if command, exists := s.aliases[name]; exists {
+			return &ExecutionResult{
+				Output:   fmt.Sprintf("alias %s='%s'\n", name, command),
+				ExitCode: 0,
+			}, nil
+		} else {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("alias: %s: not found", name),
+				ExitCode: 1,
+			}, nil
+		}
+	}
+	
+	// Handle NAME=value format  
 	for _, arg := range args {
 		if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
@@ -621,18 +713,10 @@ func (s *Shell) builtinAlias(args []string) (*ExecutionResult, error) {
 			
 			s.aliases[name] = value
 		} else {
-			// Show specific alias
-			if command, exists := s.aliases[arg]; exists {
-				return &ExecutionResult{
-					Output:   fmt.Sprintf("alias %s='%s'\n", arg, command),
-					ExitCode: 0,
-				}, nil
-			} else {
-				return &ExecutionResult{
-					Error:    fmt.Sprintf("alias: %s: not found", arg),
-					ExitCode: 1,
-				}, nil
-			}
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("alias: invalid format: %s", arg),
+				ExitCode: 1,
+			}, nil
 		}
 	}
 	
@@ -1055,6 +1139,242 @@ func levenshteinDistance(a, b string) int {
 	}
 	
 	return matrix[len(a)][len(b)]
+}
+
+// ProcessMessage represents messages for Bubble Tea integration
+type ProcessMessage interface {
+	ProcessMessage()
+}
+
+// ProcessStartedMsg indicates a process has started
+type ProcessStartedMsg struct {
+	Cmd string
+	PID int
+	Err error
+}
+
+func (ProcessStartedMsg) ProcessMessage() {}
+
+// ProcessStdoutMsg contains stdout output from a process
+type ProcessStdoutMsg struct {
+	Line string
+}
+
+func (ProcessStdoutMsg) ProcessMessage() {}
+
+// ProcessStderrMsg contains stderr output from a process
+type ProcessStderrMsg struct {
+	Line string
+}
+
+func (ProcessStderrMsg) ProcessMessage() {}
+
+// ProcessExitedMsg indicates a process has exited
+type ProcessExitedMsg struct {
+	Code int
+	Err  error
+}
+
+func (ProcessExitedMsg) ProcessMessage() {}
+
+// MessageDispatcher is a function type for dispatching messages to Bubble Tea
+type MessageDispatcher func(ProcessMessage)
+
+// hasExeInPath checks if an executable exists in PATH
+func hasExeInPath(exeName string) bool {
+	_, err := exec.LookPath(exeName)
+	return err == nil
+}
+
+// shellCommand creates the appropriate shell command for the platform
+func shellCommand(raw string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		// Prefer PowerShell 7 (pwsh) for best cross-platform experience
+		if hasExeInPath("pwsh.exe") || hasExeInPath("pwsh") {
+			return exec.Command("pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", raw)
+		}
+		// Fallback to Windows PowerShell 5.x
+		if hasExeInPath("powershell.exe") || hasExeInPath("powershell") {
+			return exec.Command("powershell", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", raw)
+		}
+		// Final fallback to cmd.exe
+		return exec.Command("cmd", "/C", raw)
+	}
+	return exec.Command("/bin/sh", "-c", raw)
+}
+
+// exitCodeFromError extracts the exit code from an exec error
+func exitCodeFromError(err error) int {
+	if err == nil {
+		return 0
+	}
+	
+	if exitError, ok := err.(*exec.ExitError); ok {
+		if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+			return status.ExitStatus()
+		}
+		return 1
+	}
+	return 1
+}
+
+// streamOutput streams data from a pipe to the dispatcher
+func streamOutput(pipe io.ReadCloser, dispatch func(string)) {
+	if pipe == nil || dispatch == nil {
+		return
+	}
+	scanner := bufio.NewScanner(pipe)
+	for scanner.Scan() {
+		dispatch(scanner.Text())
+	}
+}
+
+// runViaSystemShell executes a command via the system shell with Bubble Tea integration
+func (s *Shell) runViaSystemShell(ctx context.Context, raw string, env []string, dispatch MessageDispatcher) (int, error) {
+	cmd := shellCommand(raw)
+	cmd.Dir = s.currentDir
+	cmd.Env = env
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		if dispatch != nil {
+			dispatch(ProcessStartedMsg{Cmd: raw, Err: err})
+		}
+		return 1, err
+	}
+	
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		if dispatch != nil {
+			dispatch(ProcessStartedMsg{Cmd: raw, Err: err})
+		}
+		return 1, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		if dispatch != nil {
+			dispatch(ProcessStartedMsg{Cmd: raw, Err: err})
+		}
+		return 1, err
+	}
+
+	if dispatch != nil {
+		dispatch(ProcessStartedMsg{Cmd: raw, PID: cmd.Process.Pid})
+	}
+
+	// Stream stdout in goroutine
+	go streamOutput(stdout, func(line string) {
+		if dispatch != nil {
+			dispatch(ProcessStdoutMsg{Line: line})
+		}
+	})
+
+	// Stream stderr in goroutine
+	go streamOutput(stderr, func(line string) {
+		if dispatch != nil {
+			dispatch(ProcessStderrMsg{Line: line})
+		}
+	})
+
+	err = cmd.Wait()
+	exitCode := exitCodeFromError(err)
+
+	if dispatch != nil {
+		dispatch(ProcessExitedMsg{Code: exitCode, Err: err})
+	}
+
+	return exitCode, err
+}
+
+// executeExternalViaShell executes commands via the system shell (new default behavior)
+func (s *Shell) executeExternalViaShell(cmd *Command) (*ExecutionResult, error) {
+	// Reconstruct the original command line
+	cmdLine := cmd.Name
+	if len(cmd.Args) > 0 {
+		cmdLine += " " + strings.Join(cmd.Args, " ")
+	}
+	
+	var outputBuilder strings.Builder
+	var errorBuilder strings.Builder
+	
+	// Create a simple dispatcher that captures output
+	dispatch := func(msg ProcessMessage) {
+		switch m := msg.(type) {
+		case ProcessStdoutMsg:
+			outputBuilder.WriteString(m.Line + "\n")
+		case ProcessStderrMsg:
+			errorBuilder.WriteString(m.Line + "\n")
+		}
+		
+		// Also forward to the UI dispatcher if available
+		if s.dispatcher != nil {
+			s.dispatcher(msg)
+		}
+	}
+	
+	// Run via system shell
+	exitCode, err := s.runViaSystemShell(context.Background(), cmdLine, s.buildEnvSlice(), dispatch)
+	
+	return &ExecutionResult{
+		Output:   outputBuilder.String(),
+		Error:    errorBuilder.String(),
+		ExitCode: exitCode,
+	}, err
+}
+
+// builtinDisown removes jobs from the jobs table
+func (s *Shell) builtinDisown(args []string) (*ExecutionResult, error) {
+	if len(s.jobs) == 0 {
+		return &ExecutionResult{
+			Error:    "disown: no jobs to disown",
+			ExitCode: 1,
+		}, nil
+	}
+	
+	if len(args) == 0 {
+		// Disown the most recent job
+		for id := range s.jobs {
+			delete(s.jobs, id)
+			return &ExecutionResult{
+				Output:   fmt.Sprintf("Job [%d] disowned\n", id),
+				ExitCode: 0,
+			}, nil
+		}
+	} else {
+		// Disown specific job
+		jobID, err := s.parseJobID(args[0])
+		if err != nil {
+			return &ExecutionResult{
+				Error:    "disown: " + err.Error(),
+				ExitCode: 1,
+			}, nil
+		}
+		
+		if _, exists := s.jobs[jobID]; !exists {
+			return &ExecutionResult{
+				Error:    fmt.Sprintf("disown: job %d not found", jobID),
+				ExitCode: 1,
+			}, nil
+		}
+		
+		delete(s.jobs, jobID)
+		return &ExecutionResult{
+			Output:   fmt.Sprintf("Job [%d] disowned\n", jobID),
+			ExitCode: 0,
+		}, nil
+	}
+	
+	return &ExecutionResult{ExitCode: 0}, nil
+}
+
+// builtinSuspend suspends the current shell (simulated for testing)
+func (s *Shell) builtinSuspend(args []string) (*ExecutionResult, error) {
+	// In a real shell, this would send SIGTSTP to the current process
+	// For our shell, we'll just acknowledge the command
+	return &ExecutionResult{
+		Output:   "Shell suspend requested (simulated)\n",
+		ExitCode: 0,
+	}, nil
 }
 
 func min(a, b, c int) int {
